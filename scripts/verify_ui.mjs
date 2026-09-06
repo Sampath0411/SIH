@@ -425,11 +425,29 @@ try {
   check('underground toggled', ug);
   await sleep(4500);
   const body = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
-  check('conflict banner names a conflict', /utility\/basement conflict/i.test(body));
-  check('conflict count is real', /1[0-9] utility\/basement conflict|[1-9] utility\/basement conflict/.test(body));
+  // Siripuram no longer carries the two planted utility/basement conflicts, so
+  // the banner must be ABSENT rather than empty -- a callout with nothing to
+  // call out is worse than no callout. The conflict machinery itself is
+  // unchanged and still exercised: hyderabad-banjara has 80 of them.
+  const conflictCount = await page.evaluate(async () => {
+    const rows = await fetch('/api/p/siripuram/conflicts').then((r) => r.json());
+    return Array.isArray(rows) ? rows.length : -1;
+  });
+  check('the project reports no conflicts', conflictCount === 0, String(conflictCount));
+  check('and no conflict banner is shown',
+    !/utility\/basement conflict/i.test(body));
   check('underground panel shown', /Underground infrastructure/i.test(body));
   check('depth section shown', /Depth section/i.test(body));
-  check('ST_3DIntersects credited', /ST_3DIntersects/i.test(body));
+  // The credit lives in the conflict banner, because it attributes the test
+  // that FOUND those conflicts. With none to attribute there is nothing to
+  // credit, so this is asserted only where it means something -- which keeps
+  // it a real check for hyderabad-banjara and for a re-seeded siripuram,
+  // rather than a string that has to stay on screen for its own sake.
+  if (conflictCount > 0) {
+    check('ST_3DIntersects credited', /ST_3DIntersects/i.test(body));
+  } else {
+    console.log('  SKIP  ST_3DIntersects credited — no conflicts to attribute');
+  }
   check('utility provenance disclosed',
     /not as-built utility records|No utility survey was consulted/i.test(body));
 

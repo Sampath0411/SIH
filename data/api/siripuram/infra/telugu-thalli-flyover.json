@@ -1,0 +1,1403 @@
+{
+  "id": "telugu-thalli-flyover",
+  "name": "Telugu Thalli Flyover",
+  "kind": "flyover",
+  "anchor": {
+    "lon": 83.3029481,
+    "lat": 17.7249321
+  },
+  "bearing": 91.55,
+  "summary": "Four-lane grade separation at Asilmetta, carrying Dondaparthi Road over Asilmetta Road.",
+  "facts": [
+    {
+      "label": "Lanes",
+      "value": 4,
+      "source": "wikipedia"
+    },
+    {
+      "label": "Opened",
+      "value": 2013,
+      "source": "wikipedia"
+    },
+    {
+      "label": "Connects",
+      "value": "Dondaparthi Road – Asilmetta Road",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Also known as",
+      "value": "Asilmetta Flyover",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Carriageways",
+      "value": "2, one-way each",
+      "source": "osm_geometry"
+    },
+    {
+      "label": "Mapped length",
+      "value": "1448 m",
+      "source": "osm_geometry"
+    },
+    {
+      "label": "Alignment",
+      "value": "91.6°",
+      "source": "osm_geometry"
+    },
+    {
+      "label": "Coordinates",
+      "value": "17.724932° N, 83.302948° E",
+      "source": "osm_geometry"
+    }
+  ],
+  "derivedNote": "The two carriageway alignments and the structure's length are MAPPED — they come from OpenStreetMap (© OpenStreetMap contributors, ODbL) — and the lane count, opening year and the roads it connects are published figures. The STRUCTURE is DERIVED for this demonstration: the deck level, the ramp gradients, the 30 m span spacing and every pillar identifier such as TTF-P-014 are our arithmetic. No bridge drawing or span schedule was consulted; the source does not publish the number of spans.",
+  "components": [
+    {
+      "ref": "TTF-DECK-01",
+      "kind": "deck_span",
+      "shape": "strip",
+      "label": "Carriageway (northbound)",
+      "lod": "far",
+      "geoPoints": [
+        [
+          83.2965746,
+          17.7246718
+        ],
+        [
+          83.2978875,
+          17.7251548
+        ],
+        [
+          83.2982626,
+          17.7252682
+        ],
+        [
+          83.2984458,
+          17.725297
+        ],
+        [
+          83.2986644,
+          17.7253098
+        ],
+        [
+          83.299052,
+          17.7252873
+        ],
+        [
+          83.2997319,
+          17.7252127
+        ],
+        [
+          83.3005387,
+          17.7251316
+        ],
+        [
+          83.3014968,
+          17.7250696
+        ],
+        [
+          83.3024574,
+          17.7249864
+        ],
+        [
+          83.3028916,
+          17.7249457
+        ],
+        [
+          83.3035165,
+          17.7249023
+        ],
+        [
+          83.3039624,
+          17.7248615
+        ],
+        [
+          83.3051867,
+          17.7247693
+        ],
+        [
+          83.3076684,
+          17.7245724
+        ],
+        [
+          83.3088028,
+          17.7244956
+        ],
+        [
+          83.3091928,
+          17.7244519
+        ],
+        [
+          83.3095627,
+          17.7244056
+        ],
+        [
+          83.3100618,
+          17.7243217
+        ]
+      ],
+      "grade": [
+        0.12,
+        6.16,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        5.58,
+        3.86,
+        2.22,
+        0.12
+      ],
+      "width": 9,
+      "base": 0,
+      "height": 1.2,
+      "meta": {
+        "Length": "1448 m",
+        "Lanes": 2,
+        "Deck level": "6.2 m above the road",
+        "Geometry": "OpenStreetMap",
+        "OSM way": 402901434
+      }
+    },
+    {
+      "ref": "TTF-BAR-01",
+      "kind": "barrier",
+      "shape": "strip",
+      "label": "Deck barrier",
+      "lod": "near",
+      "geoPoints": [
+        [
+          83.2965587,
+          17.7247115
+        ],
+        [
+          83.2978722,
+          17.7251947
+        ],
+        [
+          83.2982512,
+          17.7253093
+        ],
+        [
+          83.298441,
+          17.7253393
+        ],
+        [
+          83.2986651,
+          17.7253523
+        ],
+        [
+          83.2990562,
+          17.7253296
+        ],
+        [
+          83.2997367,
+          17.725255
+        ],
+        [
+          83.3005424,
+          17.725174
+        ],
+        [
+          83.3015003,
+          17.725112
+        ],
+        [
+          83.3024615,
+          17.7250287
+        ],
+        [
+          83.3028953,
+          17.7249881
+        ],
+        [
+          83.3035201,
+          17.7249447
+        ],
+        [
+          83.3039661,
+          17.7249039
+        ],
+        [
+          83.3051903,
+          17.7248117
+        ],
+        [
+          83.3076719,
+          17.7246148
+        ],
+        [
+          83.3088064,
+          17.724538
+        ],
+        [
+          83.3091982,
+          17.7244941
+        ],
+        [
+          83.3095695,
+          17.7244476
+        ],
+        [
+          83.3100695,
+          17.7243636
+        ]
+      ],
+      "grade": [
+        0.12,
+        6.16,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        5.58,
+        3.86,
+        2.22,
+        0.12
+      ],
+      "width": 0.45,
+      "base": 1.2,
+      "height": 0.95,
+      "meta": {
+        "Type": "Crash barrier"
+      }
+    },
+    {
+      "ref": "TTF-DECK-02",
+      "kind": "deck_span",
+      "shape": "strip",
+      "label": "Carriageway (southbound)",
+      "lod": "far",
+      "geoPoints": [
+        [
+          83.2965197,
+          17.7247575
+        ],
+        [
+          83.2978688,
+          17.7252391
+        ],
+        [
+          83.2981464,
+          17.7253221
+        ],
+        [
+          83.2984176,
+          17.72538
+        ],
+        [
+          83.2987288,
+          17.7253915
+        ],
+        [
+          83.2989324,
+          17.7253775
+        ],
+        [
+          83.299741,
+          17.7252876
+        ],
+        [
+          83.3005417,
+          17.7252096
+        ],
+        [
+          83.3015006,
+          17.7251471
+        ],
+        [
+          83.3024649,
+          17.7250603
+        ],
+        [
+          83.3028924,
+          17.725029
+        ],
+        [
+          83.3035256,
+          17.7249796
+        ],
+        [
+          83.3061051,
+          17.7247802
+        ],
+        [
+          83.3073782,
+          17.7246766
+        ],
+        [
+          83.3080384,
+          17.7246241
+        ],
+        [
+          83.3084809,
+          17.7245961
+        ],
+        [
+          83.3091435,
+          17.7245467
+        ],
+        [
+          83.3095756,
+          17.7244909
+        ],
+        [
+          83.3100702,
+          17.7244074
+        ]
+      ],
+      "grade": [
+        0.12,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        3.85,
+        1.94,
+        0.12
+      ],
+      "width": 9,
+      "base": 0,
+      "height": 1.2,
+      "meta": {
+        "Length": "1448 m",
+        "Lanes": "2",
+        "Deck level": "6.2 m above the road",
+        "Geometry": "OpenStreetMap",
+        "OSM way": 402901432
+      }
+    },
+    {
+      "ref": "TTF-BAR-02",
+      "kind": "barrier",
+      "shape": "strip",
+      "label": "Deck barrier",
+      "lod": "near",
+      "geoPoints": [
+        [
+          83.2965352,
+          17.7247177
+        ],
+        [
+          83.2978839,
+          17.7251991
+        ],
+        [
+          83.2981579,
+          17.725281
+        ],
+        [
+          83.2984231,
+          17.7253378
+        ],
+        [
+          83.2987286,
+          17.725349
+        ],
+        [
+          83.2989277,
+          17.7253352
+        ],
+        [
+          83.2997362,
+          17.7252453
+        ],
+        [
+          83.300538,
+          17.7251672
+        ],
+        [
+          83.301497,
+          17.7251047
+        ],
+        [
+          83.302461,
+          17.725018
+        ],
+        [
+          83.3028889,
+          17.7249866
+        ],
+        [
+          83.303522,
+          17.7249372
+        ],
+        [
+          83.3061015,
+          17.7247378
+        ],
+        [
+          83.3073745,
+          17.7246342
+        ],
+        [
+          83.308035,
+          17.7245817
+        ],
+        [
+          83.3084777,
+          17.7245537
+        ],
+        [
+          83.3091391,
+          17.7245044
+        ],
+        [
+          83.3095687,
+          17.7244489
+        ],
+        [
+          83.3100625,
+          17.7243655
+        ]
+      ],
+      "grade": [
+        0.12,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        6.2,
+        3.85,
+        1.94,
+        0.12
+      ],
+      "width": 0.45,
+      "base": 1.2,
+      "height": 0.95,
+      "meta": {
+        "Type": "Crash barrier"
+      }
+    },
+    {
+      "ref": "TTF-P-001",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2978803,
+        17.7251975
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "151 m"
+      }
+    },
+    {
+      "ref": "TTF-P-002",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2981522,
+        17.7252795
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "181 m"
+      }
+    },
+    {
+      "ref": "TTF-P-003",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2984303,
+        17.7253382
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "211 m"
+      }
+    },
+    {
+      "ref": "TTF-P-004",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2987149,
+        17.7253496
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "241 m"
+      }
+    },
+    {
+      "ref": "TTF-P-005",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2989993,
+        17.7253316
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "271 m"
+      }
+    },
+    {
+      "ref": "TTF-P-006",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2992825,
+        17.7253003
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "302 m"
+      }
+    },
+    {
+      "ref": "TTF-P-007",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2995656,
+        17.7252691
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "332 m"
+      }
+    },
+    {
+      "ref": "TTF-P-008",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.2998489,
+        17.7252391
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "362 m"
+      }
+    },
+    {
+      "ref": "TTF-P-009",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3001324,
+        17.725211
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "392 m"
+      }
+    },
+    {
+      "ref": "TTF-P-010",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3004159,
+        17.7251829
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "422 m"
+      }
+    },
+    {
+      "ref": "TTF-P-011",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3006999,
+        17.7251602
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "452 m"
+      }
+    },
+    {
+      "ref": "TTF-P-012",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3009843,
+        17.7251417
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "483 m"
+      }
+    },
+    {
+      "ref": "TTF-P-013",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3012686,
+        17.7251233
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "513 m"
+      }
+    },
+    {
+      "ref": "TTF-P-014",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3015529,
+        17.7251035
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "543 m"
+      }
+    },
+    {
+      "ref": "TTF-P-015",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3018367,
+        17.7250785
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "573 m"
+      }
+    },
+    {
+      "ref": "TTF-P-016",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3021205,
+        17.7250534
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "603 m"
+      }
+    },
+    {
+      "ref": "TTF-P-017",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3024043,
+        17.7250284
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "633 m"
+      }
+    },
+    {
+      "ref": "TTF-P-018",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3026882,
+        17.7250044
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "663 m"
+      }
+    },
+    {
+      "ref": "TTF-P-019",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3029722,
+        17.7249814
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "694 m"
+      }
+    },
+    {
+      "ref": "TTF-P-020",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3032564,
+        17.7249605
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "724 m"
+      }
+    },
+    {
+      "ref": "TTF-P-021",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3035406,
+        17.7249395
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "754 m"
+      }
+    },
+    {
+      "ref": "TTF-P-022",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3038246,
+        17.7249169
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "784 m"
+      }
+    },
+    {
+      "ref": "TTF-P-023",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3041087,
+        17.7248943
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "814 m"
+      }
+    },
+    {
+      "ref": "TTF-P-024",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3043927,
+        17.7248718
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "844 m"
+      }
+    },
+    {
+      "ref": "TTF-P-025",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3046768,
+        17.7248492
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "875 m"
+      }
+    },
+    {
+      "ref": "TTF-P-026",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3049608,
+        17.7248267
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "905 m"
+      }
+    },
+    {
+      "ref": "TTF-P-027",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3052449,
+        17.7248044
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "935 m"
+      }
+    },
+    {
+      "ref": "TTF-P-028",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3055289,
+        17.7247821
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "965 m"
+      }
+    },
+    {
+      "ref": "TTF-P-029",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.305813,
+        17.7247598
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "995 m"
+      }
+    },
+    {
+      "ref": "TTF-P-030",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3060971,
+        17.7247375
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1025 m"
+      }
+    },
+    {
+      "ref": "TTF-P-031",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3063811,
+        17.7247152
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1055 m"
+      }
+    },
+    {
+      "ref": "TTF-P-032",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3066652,
+        17.7246926
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1086 m"
+      }
+    },
+    {
+      "ref": "TTF-P-033",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3069492,
+        17.72467
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1116 m"
+      }
+    },
+    {
+      "ref": "TTF-P-034",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3072332,
+        17.7246475
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1146 m"
+      }
+    },
+    {
+      "ref": "TTF-P-035",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3075173,
+        17.7246249
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1176 m"
+      }
+    },
+    {
+      "ref": "TTF-P-036",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3078013,
+        17.7246023
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1206 m"
+      }
+    },
+    {
+      "ref": "TTF-P-037",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3080856,
+        17.7245828
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1236 m"
+      }
+    },
+    {
+      "ref": "TTF-P-038",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3083699,
+        17.7245639
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1267 m"
+      }
+    },
+    {
+      "ref": "TTF-P-039",
+      "kind": "pillar",
+      "shape": "cylinder",
+      "label": "Support pillar",
+      "lod": "mid",
+      "geoPos": [
+        83.3086542,
+        17.7245447
+      ],
+      "radius": 0.95,
+      "base": -2.2,
+      "height": 8.4,
+      "meta": {
+        "Height above road": "6.2 m",
+        "Diameter": "1.9 m",
+        "Span to next pier": "30 m",
+        "Chainage from west end": "1297 m"
+      }
+    },
+    {
+      "ref": "TTF-RD-01",
+      "kind": "road",
+      "shape": "strip",
+      "label": "Dondaparthi Road (at grade)",
+      "lod": "far",
+      "geoPoints": [
+        [
+          83.2965472,
+          17.7247146
+        ],
+        [
+          83.2978782,
+          17.7251969
+        ],
+        [
+          83.2982045,
+          17.7252952
+        ],
+        [
+          83.2984317,
+          17.7253385
+        ],
+        [
+          83.2986966,
+          17.7253507
+        ],
+        [
+          83.2989922,
+          17.7253324
+        ],
+        [
+          83.2997364,
+          17.7252502
+        ],
+        [
+          83.3005402,
+          17.7251706
+        ],
+        [
+          83.3014987,
+          17.7251083
+        ],
+        [
+          83.3024611,
+          17.7250234
+        ],
+        [
+          83.302892,
+          17.7249873
+        ],
+        [
+          83.3035211,
+          17.724941
+        ],
+        [
+          83.3050338,
+          17.7248209
+        ],
+        [
+          83.3062824,
+          17.724723
+        ],
+        [
+          83.3078534,
+          17.7245982
+        ],
+        [
+          83.3086419,
+          17.7245458
+        ],
+        [
+          83.3091682,
+          17.7244993
+        ],
+        [
+          83.3095692,
+          17.7244483
+        ],
+        [
+          83.310066,
+          17.7243646
+        ]
+      ],
+      "width": 23,
+      "base": 0.01,
+      "height": 0.05,
+      "meta": {
+        "Lanes": 4,
+        "Runs": "Beneath the flyover deck",
+        "Geometry": "OpenStreetMap"
+      }
+    },
+    {
+      "ref": "TTF-JCT-01",
+      "kind": "junction",
+      "shape": "box",
+      "label": "Asilmetta junction",
+      "lod": "far",
+      "x": 0,
+      "y": 0,
+      "w": 74,
+      "d": 74,
+      "base": 0.02,
+      "height": 0.06,
+      "meta": {
+        "Type": "At-grade crossing beneath the flyover",
+        "Arms": 4,
+        "Position": "17.725023, 83.302461"
+      }
+    }
+  ]
+}

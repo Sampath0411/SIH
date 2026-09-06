@@ -19,6 +19,19 @@ string, so each step is also a bookmark you can hand to someone else.
 | **Railway station** | <http://localhost:3000/p/vizag-infra?site=vskp-railway-station> |
 | **Flyover** | <http://localhost:3000/p/vizag-infra?site=telugu-thalli-flyover> |
 
+Both are also offered by the **siripuram** project, which is the same city:
+
+| | |
+|---|---|
+| **Station, in Siripuram** | <http://localhost:3000/p/siripuram?site=vskp-railway-station> |
+| **Flyover, in Siripuram** | <http://localhost:3000/p/siripuram?site=telugu-thalli-flyover> |
+
+A site is not bounded by the project's own AOI — the navigator flies to the
+structure's anchor and the terrain is sampled over the structure's own extent —
+so a project can offer a landmark that stands outside the ground its cadastre
+covers. The definition lives in one place and is mirrored by
+`npm run build:vizag`.
+
 Both open from the **Infrastructure** panel, top left. Opening a site is what
 fetches and builds it — nothing is in the scene until you ask for it, and
 closing one tears it down.
@@ -114,6 +127,10 @@ a corrected map becomes a corrected model.
 
 ## Notes
 
+- Siripuram carries **no utility/basement conflicts**. The two planted ones
+  were removed on request, so its conflict banner and the `ST_3DIntersects`
+  credit that belongs to it are gone with them. The conflict machinery is
+  untouched and still exercised — `hyderabad-banjara` has 80.
 - `npm run smoke` cannot pass on this branch: it has no session handling and
   the viewer redirects anonymous visitors to `/login`. Pre-existing, unrelated
   to this work.

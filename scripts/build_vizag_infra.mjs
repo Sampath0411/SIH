@@ -52,6 +52,19 @@ const ROOT = process.cwd();
 const OUT = path.join(ROOT, 'data', 'api', SLUG);
 const INFRA = path.join(OUT, 'infra');
 
+/**
+ * Other projects that should also offer these sites.
+ *
+ * The station and the flyover are real structures in Visakhapatnam, and
+ * Siripuram is a Visakhapatnam AOI -- so they belong on its site list too.
+ * A site is not scoped by the project's bbox: the navigator flies to the
+ * structure's own anchor and InfraSiteLayer samples terrain over the site's
+ * own extent, so a project can offer a landmark that sits outside the ground
+ * its cadastre covers. What it must NOT do is duplicate the definition, so
+ * the specs are written from one place to every project that lists them.
+ */
+const MIRROR_SLUGS = ['siripuram'];
+
 const M_PER_DEG_LAT = 110574;
 const mPerDegLon = (lat) => 111320 * Math.cos((lat * Math.PI) / 180);
 
@@ -350,7 +363,7 @@ writeJson(path.join(OUT, 'detail.json'), detail);
 
 // A light index, so the site navigator can list what exists without pulling a
 // whole structure. The specs themselves are fetched only when a site is opened.
-writeJson(path.join(OUT, 'sites.json'), {
+const siteIndex = {
   sites: sites.map((s) => ({
     id: s.id,
     name: s.name,
@@ -360,7 +373,20 @@ writeJson(path.join(OUT, 'sites.json'), {
     extent: siteExtent(s).map((v) => +v.toFixed(6)),
     components: s.components.length,
   })),
-});
+};
+writeJson(path.join(OUT, 'sites.json'), siteIndex);
+
+// The same index and the same specs, for every project that also offers them.
+for (const slug of MIRROR_SLUGS) {
+  const dir = path.join(ROOT, 'data', 'api', slug);
+  if (!fs.existsSync(dir)) continue;
+  fs.mkdirSync(path.join(dir, 'infra'), { recursive: true });
+  writeJson(path.join(dir, 'sites.json'), siteIndex);
+  for (const spec of specs) {
+    writeJson(path.join(dir, 'infra', `${spec.id}.json`), spec);
+  }
+  console.log(`  mirrored ${specs.length} site(s) into data/api/${slug}/`);
+}
 
 // ------------------------------------------------------------- registry ---
 const registryPath = path.join(ROOT, 'data', 'api', 'projects.json');

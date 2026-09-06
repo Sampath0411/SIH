@@ -4,7 +4,7 @@ import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
 import { useEffect, useMemo, useRef } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
-import { useDataStore, useEnsureSite, useViewStore } from '@/lib/store';
+import { useDataStore, useEnsureSite, useSiteIndex, useViewStore } from '@/lib/store';
 import {
   INFRA_COLOR, INFRA_DEFAULT, INFRA_SELECTED, INFRA_SELECTED_OUTLINE,
 } from '@/lib/cesium/materials';
@@ -14,7 +14,7 @@ import { createBucketGrid, extentOf, type BucketGrid } from '@/lib/cesium/spatia
 import { placeSite, structuralDatum } from '@/lib/infra/build';
 import type { ComponentLod, PlacedComponent, PlacedSite } from '@/lib/infra/types';
 import {
-  fallbackDatum, fieldBboxFor, useGroundField,
+  fallbackDatum, fieldBboxFor, unionBbox, useGroundField,
 } from '@/lib/underground/use-ground-field';
 
 /**
@@ -67,16 +67,19 @@ export default function InfraSiteLayer() {
   const buildings = useDataStore((s) => s.buildings);
 
   const spec = useEnsureSite(activeSiteId);
+  // Already loaded by the navigator; this is a read, not a second fetch.
+  const sites = useSiteIndex();
 
   /**
    * Ground under the site, from the field the underground layers already
    * sample. The SAME domain they use, so all three share one terrain batch
    * rather than taking three.
    */
-  const fieldBbox = useMemo(
-    () => fieldBboxFor(project?.bbox, utilities?.features, buildings?.features),
-    [project, utilities, buildings],
-  );
+  const fieldBbox = useMemo(() => {
+    const cadastre = fieldBboxFor(project?.bbox, utilities?.features, buildings?.features);
+    const entry = sites.find((x) => x.id === activeSiteId);
+    return entry ? unionBbox(cadastre, entry.extent) : cadastre;
+  }, [project, utilities, buildings, sites, activeSiteId]);
   const field = useGroundField(
     viewer, ready, fieldBbox, fallbackDatum(ground), spec !== null,
   );

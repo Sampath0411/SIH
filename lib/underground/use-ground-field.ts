@@ -92,6 +92,30 @@ export function fieldBboxFor(
   ];
 }
 
+/**
+ * Widen a domain to cover another box.
+ *
+ * A site does not have to sit inside the project whose list offers it: the
+ * station and the flyover are Visakhapatnam landmarks and Siripuram is a
+ * Visakhapatnam AOI, but they stand two kilometres west of the ground its
+ * cadastre covers. A field built from the cadastre alone would CLAMP them to
+ * its edge height -- the same boundary mistake that put the tail of the
+ * utility network in the air -- so whoever draws a site widens the domain to
+ * include it.
+ */
+export function unionBbox(
+  a: FieldBbox | null | undefined,
+  b: FieldBbox | null | undefined,
+): FieldBbox | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  const r = (v: number) => Math.round(v * 1e5) / 1e5;
+  return [
+    r(Math.min(a[0], b[0])), r(Math.min(a[1], b[1])),
+    r(Math.max(a[2], b[2])), r(Math.max(a[3], b[3])),
+  ];
+}
+
 /** Per viewer, per bbox. WeakMap so a destroyed viewer takes its cache with it. */
 const cache = new WeakMap<Cesium.Viewer, Map<string, Promise<GroundField>>>();
 
