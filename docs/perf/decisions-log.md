@@ -985,3 +985,82 @@ now has `role="status" aria-live="polite"` on the panel, the
 pulse dot is `aria-hidden`, and each conflict button carries an
 `aria-label` naming the ULPIN it selects. Click handlers and
 visual classes are untouched.
+
+---
+
+## DL-K — Realistic 3D model on the active building: glass overlay, balconies, roof detail
+
+**Why:** the active building used to read as a window-grid texture
+on a wall, not as a building. The user wants the click-on-one-block
+moment to feel like clicking on a building: glass on the panes,
+balconies on the long edge, water tank, antenna, lift overrun. The
+enhancement is layered on top of the existing per-storey prisms, not
+a rewrite -- every existing entity (walls, slab caps, plinth, bands,
+cornice, fixtures) is kept, the new geometry is additive.
+
+**Scope:** the active building only. The other 2,212 footprints
+keep their flat extrusion. Frame budget on a 30 fps city view
+cannot take a quad + polyline per floor per edge per building.
+
+**Three calls, with measurements:**
+
+1. **Glass as a SECOND polygon, not a tint on the existing
+   `ImageMaterialProperty`.** Tinting the wall texture uniformly
+   would wash out the sill / lintel / mullion contrast the canvas
+   draws. Two stacked polygons (wall underneath, glass overlay at
+   +0.001 m proud) alpha-blend in draw order: the underlying window
+   grid + door + spandrel detail still read through, and the panes
+   read as actual glass. The +0.001 m horizontal bias is the same
+   trick InfraSiteLayer's selection highlight uses, and the slab
+   cap is still drawn on top, opaque, so the top face of every
+   storey stays correct. A blue tint rather than a true grey is
+   the one place the COLOUR RULE (materials.ts:10-32) yields to
+   physics -- glass IS tinted, and 0.18 alpha + active-building-only
+   scope keeps it a single accent on the grey-on-green scheme, not
+   a category. Commercial uses a stronger alpha (0.28) because the
+   dark spandrels in the curtain wall would otherwise swallow a
+   0.18 overlay.
+
+2. **Balconies on the two longest edges only, residential +
+   commercial.** The principal-axis direction of the footprint is
+   the long edge of a rectangle and the line the rooms behind the
+   balcony are arranged along, so balconies sit there for a reason.
+   Institutional (offices, schools) and industrial (warehouses,
+   plants) are not residential and get nothing. Ground floor is
+   skipped; a single-storey structure returns `[]`. `lib/cesium/balconies.ts`
+   (new) finds the two longest edges via signed-area winding
+   (same test `insetRing` uses), projects each edge outward by
+   1.2 m along the edge normal, insets 0.4 m on each end, and emits
+   a slab + railing polyline per edge per storey. The slab and
+   railing ride the explode slider via `CallbackProperty` closures
+   reading the same `liftFor` the wall does.
+
+3. **Roof clutter upgrade.** Residential gets a second smaller
+   water tank on the same stand (the standard "double-tank"
+   arrangement) and a 2.4 m whip antenna with a small box tip.
+   Commercial gets a taller (1.6 -> 2.4 m) lift overrun with a
+   thin polyline cable from its top to the deck. Institutional
+   gets a small finial block on the flagpole's tip and a whip
+   antenna. Industrial is unchanged. All new entities go through
+   the same `fixturesFor` path -- the existing `tagFixture` helper
+   is dead code for picking (it writes `__tag`, the picker reads
+   `.tag`) but is harmless symmetry, and the absence of any
+   `tagEntity` call is what keeps the picker falling through to
+   the wall underneath.
+
+**Things that were deliberately not done.** Glass refraction
+(would need `PolylineVolume` per pane, way too many entities);
+procedural variation per floor (would defeat the per-storey slab
+cap that already exists); balconies on the short ends (services
+go there); a new separate transparent layer in `FloorStackLayer`
+(BuildingModelLayer tears down on slice, so the new entities
+only coexist with the non-sliced view, and the same depth-bucket
+defect materials.ts:481-484 documents would not bite because the
+two translucent surfaces sit at slightly different Zs).
+
+**Measurement.** tsc clean. 57/57 unit, 29/29 auth, no test
+changes (this is a render-only change, no API surface touched).
+Adds at most ~150 entities per active building (≤ 28 storeys
+worst case). Other 2,212 buildings unchanged. No data model
+change, no schema change, no API change, no acceptance-script
+change.

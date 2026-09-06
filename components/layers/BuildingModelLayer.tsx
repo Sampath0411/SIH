@@ -10,6 +10,7 @@ import { toSceneZ } from '@/lib/cesium/terrain';
 import { flatLonLat } from '@/lib/geo';
 import { buildRoof } from '@/lib/cesium/roofs';
 import { fixturesFor } from '@/lib/cesium/equipment';
+import { balconiesFor } from '@/lib/cesium/balconies';
 import { windowGrid } from '@/lib/cesium/textures';
 import type { BuildingProps, UseType } from '@/lib/types';
 
@@ -135,6 +136,19 @@ export default function BuildingModelLayer() {
       color: MATERIALS.buildingModelWall,
     });
 
+    // Glass overlay material -- a translucent blue, drawn on top of each
+    // storey's wall as a SECOND polygon at +0.001 m proud. The +0.001 m
+    // horizontal bias is the same trick InfraSiteLayer uses for its
+    // selection highlight (see InfraSiteLayer.tsx) and is what defeats
+    // the z-fight the textured wall underneath would otherwise win.
+    // Curtain wall (commercial) takes a stronger tint because the dark
+    // spandrels in the texture would otherwise swallow a 0.18 alpha
+    // overlay. The slab cap is still drawn ON TOP, opaque, so the top
+    // face of every storey stays correct.
+    const glassMat = new Cesium.ColorMaterialProperty(
+      use === 'commercial' ? MATERIALS.glassCurtain : MATERIALS.glassOverlay,
+    );
+
     // Above-ground storeys 0..floors-1, then any basements as a solid grey
     // mass below grade. Each storey lifts by its own index when exploded.
     // A flat slab cap closes each storey's top: the extruded polygon carries
@@ -158,6 +172,28 @@ export default function BuildingModelLayer() {
           shadows: shadowsRef.current,
         },
       });
+      // Glass overlay: a second polygon at the same height range, +0.001
+      // m proud, with a translucent blue. Reads as actual glass on the
+      // panes without washing out the window grid + door + spandrel
+      // contrast the texture is doing. Drawn after the wall so it
+      // composites over it; drawn before the slab cap so the cap still
+      // closes the storey on top.
+      ds.entities.add({
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
+          height: new Cesium.CallbackProperty(
+            () => z0 + liftFor(i) + 0.001,
+            false,
+          ),
+          extrudedHeight: new Cesium.CallbackProperty(
+            () => z0 + FLOOR_H + liftFor(i) + 0.001,
+            false,
+          ),
+          material: glassMat,
+          outline: false,
+          shadows: shadowsRef.current,
+        },
+      });
       // Slab cap riding the same lift: a hair above the storey top, thin
       // enough not to z-fight, light enough to read as a floor plate.
       ds.entities.add({
@@ -177,6 +213,23 @@ export default function BuildingModelLayer() {
         },
       });
     }
+
+    // ---- balconies: slabs + railings on the two longest edges -----------
+    // Built ONCE per active building (constant profile) and added to the
+    // data source. balconiesFor already lifts the entities per-storey via
+    // CallbackProperty closures reading the same liftFor the walls do, so
+    // the explode slider separates the slabs and the wall together.
+    //
+    // The slab sits at the same Z as its storey's wall, with no z-bias:
+    // the wall is the under-layer and the slab is OUTWARD of the wall
+    // (1.2 m beyond the footprint), so there is no depth conflict between
+    // the two. The railing is a polyline at the front edge of the slab.
+    //
+    // A click on a balcony falls through to the wall underneath, because
+    // balcony entities are NOT tagged with tagEntity -- the picker reads
+    // the building's tag off the wall.
+    const balconies = balconiesFor(use, ring, base, FLOOR_H, storeyCount, liftFor);
+    for (const b of balconies) ds.entities.add(b);
     for (let b = 1; b <= props.basements; b++) {
       const z0 = base - b * FLOOR_H;
       ds.entities.add({

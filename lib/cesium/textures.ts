@@ -230,13 +230,6 @@ function drawResidential(
   // Sill shadow underneath.
   ctx.fillStyle = 'rgba(0,0,0,0.14)';
   ctx.fillRect(x0 - 4, y0 + winH + 2 + Math.max(1, Math.round(PX_PER_M * 0.16)), winW + 8, 2);
-
-  // Faint balcony rail hint across the lower third (Indian residential bays
-  // usually have one; at this scale a rail reads as two light lines).
-  const railY = Math.round(h * 0.74);
-  ctx.fillStyle = 'rgba(250,246,236,0.5)';
-  ctx.fillRect(0, railY, w, Math.max(1, Math.round(PX_PER_M * 0.08)));
-  ctx.fillRect(0, railY + Math.round(PX_PER_M * 0.35), w, Math.max(1, Math.round(PX_PER_M * 0.08)));
 }
 
 function drawCommercial(

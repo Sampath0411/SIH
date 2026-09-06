@@ -323,6 +323,50 @@ export const MATERIALS = {
    * floor-plate edge, which is the detailing the explode view wants.
    */
   buildingModelSlabCap: grey(232),
+
+  /**
+   * Translucent glass overlay drawn ON TOP of each storey's textured wall.
+   *
+   * Two stacked polygons per storey is the only way to get "glass on the
+   * panes, plaster between": tinting the whole wall texture uniformly
+   * washes the sill/lintel/mullion contrast the canvas draws. This overlay
+   * is a SECOND polygon at +0.001 m proud (so it wins the depth test
+   * against the textured wall underneath) and at very low alpha (so the
+   * underlying window grid and door detail still read through). The slab
+   * cap is still drawn on top of both, opaque, so the top face of every
+   * storey stays correct.
+   *
+   * A subtle blue rather than a true grey, deliberately. Built form is
+   * otherwise neutral in this scene -- the COLOUR RULE reserves hue for
+   * MEANING (utility hue, conflict red, risk ramp). A blue tint is the
+   * one place that rule yields to physics: glass IS tinted, and a building
+   * without a glass tint reads as concrete. At 0.18 alpha and only on the
+   * active building, the hue is a single accent on the rest of the
+   * grey-on-green scheme, not a category.
+   */
+  glassOverlay: Cesium.Color.fromBytes(174, 200, 220).withAlpha(0.18),
+  /**
+   * Curtain wall variant. The commercial spandrels are already dark, so a
+   * 0.18 overlay would not register against them. A stronger alpha here
+   * is what makes the vision glass read as glass against the spandrel
+   * below it. Same hue family, so a mixed-use building does not look
+   * like two materials.
+   */
+  glassCurtain: Cesium.Color.fromBytes(150, 180, 205).withAlpha(0.28),
+
+  /**
+   * Balcony slab top face. One step lighter than the wall so the
+   * projection reads as separate material, not as a thicker wall. Same
+   * off-white as the slab cap so the two agree.
+   */
+  balconySlab: grey(232),
+  /**
+   * Balcony railing. A mid-grey, not a black silhouette -- a black
+   * railing in front of a pale wall at 1 m tall would read as a slot
+   * in the building, not as a barrier. Same tone as the floor bands so
+   * the eye sees them as the same kind of detail.
+   */
+  balconyRailing: grey(160),
 } as const;
 
 // -------------------------------------------------------------------- roads

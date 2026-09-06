@@ -73,21 +73,36 @@ function cylinder(
 }
 
 function residentialFixtures({ lon, lat, baseZ, radiusM }: MakeOpts): Cesium.Entity[] {
-  // Black tank on a stand (the standard Indian rooftop setup), a stairhead,
-  // and a small laundry/drying line offset into a corner.
+  // Black tank on a stand (the standard Indian rooftop setup), a second
+  // smaller tank beside it (the standard "double-tank" arrangement), a
+  // stairhead, a small laundry/drying line offset into a corner, and a
+  // short whip antenna. The antenna is the part that reads as a residential
+  // roof from a distance: a single thin vertical line is the silhouette of
+  // every Indian residential rooftop.
   const stand = cylinder(lon + 0.000012, lat - 0.000009, baseZ, baseZ + 0.5, 0.55, 0.45);
   const tank = cylinder(lon + 0.000012, lat - 0.000009, baseZ + 0.5, baseZ + 1.7, 0.75);
+  const stand2 = cylinder(lon + 0.000016, lat - 0.000006, baseZ, baseZ + 0.4, 0.45, 0.35);
+  const tank2 = cylinder(lon + 0.000016, lat - 0.000006, baseZ + 0.4, baseZ + 1.4, 0.55);
   const stair = box(lon - 0.000014, lat + 0.000010, baseZ, baseZ + 2.2, 0.8, 0.7);
   const line = box(lon + 0.000020, lat + 0.000018, baseZ, baseZ + 0.06, 1.2, 0.04,
     fixtureMaterialLight);
-  [stand, tank, stair, line].forEach(tagFixture);
+  // Whip antenna: a 2.4 m thin pole with a small sphere tip. The pole
+  // alone reads as a stake; the tip is what makes it an antenna at a glance.
+  const antennaPole = cylinder(lon - 0.000008, lat + 0.000022, baseZ, baseZ + 2.4, 0.025);
+  const antennaTip = box(lon - 0.000008, lat + 0.000022, baseZ + 2.4, baseZ + 2.55, 0.06, 0.06,
+    fixtureMaterialLight);
+  const all = [stand, tank, stand2, tank2, stair, line, antennaPole, antennaTip];
+  all.forEach(tagFixture);
   void radiusM;
-  return [stand, tank, stair, line];
+  return all;
 }
 
 function commercialFixtures({ lon, lat, baseZ, radiusM }: MakeOpts): Cesium.Entity[] {
-  // Two rows of 3 AC condensers on plinths, a lift overrun at one end, and a
-  // rooftop signboard slab along one edge.
+  // Two rows of 3 AC condensers on plinths, a lift overrun at one end with
+  // a slim cable run to the roof, and a rooftop signboard slab along one
+  // edge. The overrun is taller than it used to be (2.4 m, not 1.6 m) so
+  // it actually reads as a lift motor room against the parapet, and the
+  // cable is what makes it look like machinery, not just a box.
   const rowZ = baseZ + 0.35;
   const acs: Cesium.Entity[] = [];
   const rowLenM = Math.min(5, radiusM * 1.2);
@@ -101,26 +116,52 @@ function commercialFixtures({ lon, lat, baseZ, radiusM }: MakeOpts): Cesium.Enti
     acs.push(box(lon + dx, lat - 0.000013, rowZ, rowZ + 0.85, 0.42, 0.32,
       fixtureMaterialLight));
   }
+  // Lift overrun: a 1.2 m square box, 2.4 m tall, off to one corner.
+  // The cable is a polyline from the centre of the overrun's top down to
+  // the deck, so the box does not look like it's hovering.
   const overrun = box(lon - 0.000018, lat - 0.000002,
-    baseZ, baseZ + 1.6, 1.0, 1.0);
+    baseZ, baseZ + 2.4, 1.2, 1.2);
+  const cable = new Cesium.Entity({
+    polyline: {
+      positions: Cesium.Cartesian3.fromDegreesArrayHeights([
+        lon - 0.000018, lat - 0.000002, baseZ + 2.4,
+        lon - 0.000018, lat - 0.000002, baseZ,
+      ]),
+      width: 0.8,
+      material: fixtureMaterialLight,
+      clampToGround: false,
+    },
+  });
   const sign = box(lon + 0.000004, lat - Math.min(0.000028, radiusM * 0.000016),
     baseZ, baseZ + 1.2, Math.min(1.6, radiusM * 0.5), 0.08,
     fixtureMaterialLight);
-  [...acs, overrun, sign].forEach(tagFixture);
+  const all = [...acs, overrun, cable, sign];
+  all.forEach(tagFixture);
   void radiusM;
-  return [...acs, overrun, sign];
+  return all;
 }
 
 function institutionalFixtures({ lon, lat, baseZ, radiusM }: MakeOpts): Cesium.Entity[] {
-  // Flagpole on a stepped base, plus two rooftop canteen vents.
+  // Flagpole on a stepped base with a small finial block on top, plus two
+  // rooftop canteen vents, plus a whip antenna. The finial is a tiny
+  // 0.3 x 0.3 x 0.15 block that sits on the pole's tip -- a flagpole
+  // without a topper reads as a bare stick.
   const base = box(lon, lat, baseZ, baseZ + 0.3, 0.45, 0.45);
   const base2 = box(lon, lat, baseZ + 0.3, baseZ + 0.55, 0.32, 0.32);
   const pole = cylinder(lon, lat, baseZ + 0.55, baseZ + 4.8, 0.055);
+  const finial = box(lon, lat, baseZ + 4.8, baseZ + 4.95, 0.16, 0.16,
+    fixtureMaterialLight);
   const v1 = cylinder(lon + 0.000016, lat + 0.000012, baseZ, baseZ + 0.8, 0.3);
   const v2 = cylinder(lon - 0.000014, lat + 0.000014, baseZ, baseZ + 0.8, 0.3);
-  [base, base2, pole, v1, v2].forEach(tagFixture);
+  // Whip antenna: shorter and slimmer than the residential one, off to
+  // the side so it does not crowd the flagpole.
+  const antennaPole = cylinder(lon + 0.000020, lat - 0.000014, baseZ, baseZ + 2.0, 0.022);
+  const antennaTip = box(lon + 0.000020, lat - 0.000014, baseZ + 2.0, baseZ + 2.12, 0.05, 0.05,
+    fixtureMaterialLight);
+  const all = [base, base2, pole, finial, v1, v2, antennaPole, antennaTip];
+  all.forEach(tagFixture);
   void radiusM;
-  return [base, base2, pole, v1, v2];
+  return all;
 }
 
 function industrialFixtures({ lon, lat, baseZ, radiusM }: MakeOpts): Cesium.Entity[] {
@@ -137,8 +178,9 @@ function industrialFixtures({ lon, lat, baseZ, radiusM }: MakeOpts): Cesium.Enti
   // Rooftop access hut.
   const hut = box(lon - 0.000022, lat - 0.000018, baseZ, baseZ + 1.1, 0.7, 0.6,
     fixtureMaterialLight);
-  [...cowls, hut].forEach(tagFixture);
-  return [...cowls, hut];
+  const all = [...cowls, hut];
+  all.forEach(tagFixture);
+  return all;
 }
 
 /** Pick the equipment factory for the given use type. */
