@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
-import { listProjects, DEFAULT_SLUG } from '@/lib/projects';
+import { listProjects, DEFAULT_SLUG, isValidSlug } from '@/lib/projects';
 import { currentSession } from '@/lib/auth/guards';
 import LoginForm from './LoginForm';
 
@@ -20,7 +20,11 @@ export const metadata = {
  * same registry the rest of the application reads, so adding a project
  * shows up in the dropdown without further changes.
  */
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
   const me = await currentSession();
   if (me) {
     if (me.kind === 'gov') {
@@ -32,6 +36,34 @@ export default async function LoginPage() {
 
   const projects = await listProjects();
   const defaultProject = projects[0]?.slug ?? DEFAULT_SLUG;
+
+  // ?next= is what RoleGate writes when a project page bounces an
+  // unauthenticated visitor. It must round-trip back to the page they were
+  // trying to reach, not be silently dropped. The validation here is
+  // deliberately tight: only an internal path that begins with /p/<slug>
+  // for a slug the registry knows about, so the parameter cannot be used
+  // as an open redirect to an attacker URL. Anything else falls back to
+  // the login's own default (the user's project, or the gallery).
+  const params = await searchParams;
+  const safeNext = (() => {
+    const candidate = params.next;
+    if (typeof candidate !== 'string') return null;
+    if (!candidate.startsWith('/p/')) return null;
+    const slug = candidate.slice(3).split(/[/?#]/, 1)[0];
+    if (!isValidSlug(slug)) return null;
+    if (!projects.some((p) => p.slug === slug)) return null;
+    return candidate;
+  })();
+
+  // The demo credentials block is a developer convenience: a fresh
+  // checkout that points a browser at /login should be usable without
+  // reading the docs. The dev environment is the right scope -- a
+  // production deployment must not render the government's plaintext
+  // password in HTML any unauthenticated visitor can read, and the demo
+  // password is committed knowledge anyway. The block is preserved
+  // verbatim in dev so a developer running `npm run dev` still gets
+  // the same one-click path they had before this gate.
+  const showDemoCreds = process.env.NODE_ENV !== 'production';
 
   return (
     <main className="grid min-h-dvh w-screen place-items-center bg-bg px-4 py-10">
@@ -50,16 +82,19 @@ export default async function LoginPage() {
         <LoginForm
           projects={projects.map((p) => ({ slug: p.slug, name: p.name }))}
           defaultProject={defaultProject}
+          next={safeNext ?? undefined}
         />
-        <p className="mt-6 text-center text-[11px] leading-relaxed text-muted">
-          Demo accounts:
-          <br />
-          <span className="font-mono text-ink">Aadhar 111122223333 / phone 9876543210</span>
-          {' '}· Aadhar 222233334444 / phone 9876543211 · Aadhar 333344445555 / phone 9876543212
-          <br />
-          Government: <span className="font-mono text-ink">admin@sampath.gov.in</span> /
-          {' '}<span className="font-mono text-ink">ulpin-gov-2026</span>
-        </p>
+        {showDemoCreds ? (
+          <p className="mt-6 text-center text-[11px] leading-relaxed text-muted">
+            Demo accounts:
+            <br />
+            <span className="font-mono text-ink">Aadhar 111122223333 / phone 9876543210</span>
+            {' '}· Aadhar 222233334444 / phone 9876543211 · Aadhar 333344445555 / phone 9876543212
+            <br />
+            Government: <span className="font-mono text-ink">admin@sampath.gov.in</span> /
+            {' '}<span className="font-mono text-ink">ulpin-gov-2026</span>
+          </p>
+        ) : null}
       </div>
     </main>
   );

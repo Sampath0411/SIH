@@ -23,9 +23,20 @@ type Project = { slug: string; name: string };
 export default function LoginForm({
   projects,
   defaultProject,
+  next,
 }: {
   projects: Project[];
   defaultProject: string;
+  /**
+   * Where the login should send the user on success. The login page passes
+   * the `?next=` query if it was safe -- an internal `/p/<slug>` path with
+   * a slug the registry knows about. Undefined means the form falls back
+   * to its own default: a citizen goes to their project, a government
+   * user to the gallery. The LoginForm does not itself validate the path;
+   * the page already did, and the chain is RoleGate -> /login?next= ->
+   * here.
+   */
+  next?: string;
 }) {
   const router = useRouter();
   const [role, setRole] = useState<'citizen' | 'gov'>('citizen');
@@ -64,9 +75,13 @@ export default function LoginForm({
       // Refresh: the project page reads the cookie on the server and
       // the data it ships depends on the role, so a router.refresh() is
       // what gets the new cookie into the next request.
-      const target = data.role === 'citizen' && data.slug
-        ? `/p/${data.slug}`
-        : '/';
+      //
+      // `next` wins when set, and it is the safe internal path the login
+      // page validated. Without it a RoleGate-bounced visitor would land
+      // on the gallery, not on the project they were trying to open.
+      const target = next
+        ? next
+        : (data.role === 'citizen' && data.slug ? `/p/${data.slug}` : '/');
       router.push(target);
       router.refresh();
     });
