@@ -5,8 +5,9 @@ import * as Cesium from 'cesium';
 import { useEffect, useRef } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
 import { useDataStore, useViewStore } from '@/lib/store';
-import { BUILDING_ALPHA, MATERIALS } from '@/lib/cesium/materials';
+import { MATERIALS } from '@/lib/cesium/materials';
 import { tagEntity } from '@/lib/cesium/tag';
+import { windowGrid } from '@/lib/cesium/textures';
 import { toSceneZ } from '@/lib/cesium/terrain';
 import { flatLonLat } from '@/lib/geo';
 import { mark } from '@/lib/boot-marks';
@@ -15,15 +16,16 @@ import { createBucketGrid, extentOf } from '@/lib/cesium/spatial-buckets';
 import type { BuildingStyle, UseType } from '@/lib/types';
 
 /**
- * All 384 footprints, extruded.
+ * All 2,213 footprints, extruded with a per-use-type window-grid texture.
  *
  * Reads the store, renders. Never writes to it and never moves the camera.
  *
  * Performance note: entities are built ONCE. State changes (hover, fade,
  * hiding the active building) are expressed through CallbackProperty closures
  * that read a single mutable ref, and one requestAnimationFrame loop eases the
- * fade value. That is one animation driver for the whole layer instead of 384
- * competing tweens, and it avoids rebuilding geometry on every selection.
+ * fade value. That is one animation driver for the whole layer instead of
+ * 2,213 competing tweens, and it avoids rebuilding geometry on every
+ * selection.
  *
  * Building style is part of that same closure rather than a rebuild. In
  * Photoreal mode these extrusions do not go away -- they drop to alpha 0.01
@@ -31,6 +33,16 @@ import type { BuildingStyle, UseType } from '@/lib/types';
  * an entity with show:false. Everything downstream of a pick (the ULPIN card,
  * the floor ladder, the basement conflict list) therefore keeps working with
  * no photoreal-specific code path anywhere else in the app.
+ *
+ * The wall carries the same `windowGrid` texture the architectural model of
+ * the active building uses (lib/cesium/textures.ts), at a 3 m x 3.2 m tile
+ * so one tile = one storey = one bay, matching BuildingModelLayer's rhythm.
+ * Four canvases total (one per use type) are shared across all 2,213 walls
+ * via the textures module's cache. The roof is still a flat cap drawn 0.05 m
+ * above the wall top -- the cap's job is unchanged, and it is what stops the
+ * extruded polygon's top face from printing the window grid on every roof.
+ * See the per-footprint comment for the "why a texture at city scale now"
+ * rationale and the moire reasoning.
  */
 
 interface LayerState {
@@ -57,6 +69,22 @@ const FADE_RATE = 0.12;   // per frame, ~600 ms to settle
  */
 const FAR_M = 1500;
 const NEAR_DDC = new Cesium.DistanceDisplayCondition(0, FAR_M);
+
+/**
+ * Resting alpha for a city-scale building wall and cap.
+ *
+ * The earlier BUILDING_ALPHA = 0.45 design read the buildings as translucent
+ * shells drawn OVER the satellite imagery, so the parcel polygons, the lane
+ * and the plot underneath stayed readable through the extrusion. The user
+ * has since asked for the buildings to look like solid volumes (the
+ * commercial block in the reference is a deep navy curtain wall, the
+ * residential one is a warm cream with a clear window grid -- both opaque,
+ * with the imagery visible AROUND the building, not THROUGH it). 0.95 lets
+ * the texture's own use-type colour and window grid be the surface the
+ * viewer sees, with just enough softness that a building edge does not read
+ * as a painted-on decal at a raking angle.
+ */
+const CITY_ALPHA = 0.95;
 
 export default function BuildingsLayer() {
   const { viewer, ground, ready } = useViewer();
@@ -172,40 +200,60 @@ export default function BuildingsLayer() {
       // never drop a wall while keeping its roof.
       const ds = grid.forPoint(ring[0][0], ring[0][1]);
 
-      // A FLAT wall colour, not a facade texture.
+      // Window-grid texture for the wall. Per-use-type drawn (residential =
+      // warm plaster + dark blue windows, commercial = curtain wall, etc.)
+      // and cached by (use, tileWidthM, tileHeightM) so the 2,213 city-scale
+      // buildings share four canvases total. Tile size matches the
+      // architectural model of the active building (3 m x 3.2 m, one bay per
+      // 3 m, one storey per 3.2 m) so the rhythm does not jump when a block
+      // is inspected.
       //
-      // These masses are drawn at BUILDING_ALPHA over live satellite imagery,
-      // and a repeating window grid at that opacity beats against the pixels
-      // underneath instead of describing a building -- 384 of them turned the
-      // city view into moire. Fenestration is now the job of the architectural
-      // model of the ONE building being inspected, which is opaque and seen
-      // from close enough to resolve it (BuildingModelLayer). At city scale
-      // what has to read is the SILHOUETTE and its shadow, so that is all this
-      // draws.
+      // The tint is WHITE, not the use-type colour the flat-fill path used.
+      // A coloured tint multiplies the texture's hue away -- a red tint over
+      // the warm plaster would push it toward grey. White at the appropriate
+      // alpha keeps the texture's own contrast intact: the dark blue window
+      // pane reads as glass against the warm plaster wall.
+      //
+      // The earlier "no texture at city scale" call (moire over imagery) was
+      // a one-time observation before the texture was in colour, before the
+      // roof cap was drawing, and with only 384 buildings. The cap still
+      // closes the top face; the texture now has its own warm/dark contrast
+      // to read against the imagery instead of being a desaturated pattern;
+      // and the moire beat only gets problematic where the texture pattern
+      // is visible, which is the near tier -- the 1500 m DDC cutoff already
+      // hands sub-pixel textures off to BuildingsFarLayer.
+      //
+      // The wall is OPAQUE (CITY_ALPHA = 0.95) rather than the historic
+      // translucent BUILDING_ALPHA = 0.45 -- the user has asked for solid
+      // buildings with the imagery visible AROUND them, not translucent
+      // shells with the imagery showing THROUGH them. See CITY_ALPHA above
+      // and DL-K.3 in docs/perf/decisions-log.md for the rationale and
+      // measurement.
       //
       // `fade` is clamped rather than multiplied: it is an absolute alpha for
       // the buildings you are not inspecting, so clamping keeps "faded" below
       // "at rest" without ever multiplying two transparencies into nothing.
-      const wallColor = new Cesium.ColorMaterialProperty(
-        new Cesium.CallbackProperty(() => {
+      const wallMaterial = new Cesium.ImageMaterialProperty({
+        image: windowGrid(use, 3, 3.2),
+        color: new Cesium.CallbackProperty(() => {
           const s = stateRef.current;
           // Photoreal: present for picking, invisible on screen. Checked first
           // so neither hover nor fade can bring the ghost back into view.
           if (s.style === 'photoreal') return MATERIALS.buildingGhost;
           if (s.hoveredId === id) return MATERIALS.buildingHover.withAlpha(0.85);
           if (s.activeId === null || s.activeId === id) {
-            return MATERIALS.buildingFacade(use);
+            return Cesium.Color.WHITE.withAlpha(CITY_ALPHA);
           }
-          return MATERIALS.buildingFacade(use, Math.min(BUILDING_ALPHA, s.fade));
+          return Cesium.Color.WHITE.withAlpha(Math.min(CITY_ALPHA, s.fade));
         }, false),
-      );
+      });
 
       const entity = ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
           height: base,
           extrudedHeight: base + Math.max(2, props.height_m),
-          material: wallColor,
+          material: wallMaterial,
           outline: false,
           shadows: shadowsRef.current,
           // Static: handed to the far-tier primitive past FAR_M. Sharing one
@@ -230,7 +278,9 @@ export default function BuildingsLayer() {
       // from the wall. With a raking sun the cap is the face that catches the
       // light while the walls fall into shade, which is most of what makes the
       // height legible from above; the faded callback keeps the whole building
-      // (walls + cap) dissolving together.
+      // (walls + cap) dissolving together. The cap is opaque at CITY_ALPHA,
+      // not the historic translucent BUILDING_ALPHA, so the roof reads as
+      // solid with the wall (DL-K.3).
       const capTop = base + Math.max(2, props.height_m) + 0.05;
       const capEntity = ds.entities.add({
         polygon: {
@@ -243,9 +293,9 @@ export default function BuildingsLayer() {
               if (s.style === 'photoreal') return MATERIALS.buildingGhost;
               if (s.hoveredId === id) return MATERIALS.buildingHover.withAlpha(0.85);
               if (s.activeId === null || s.activeId === id) {
-                return MATERIALS.buildingRoofCap(use);
+                return MATERIALS.buildingRoofCap(use, CITY_ALPHA);
               }
-              return MATERIALS.buildingRoofCap(use, Math.min(BUILDING_ALPHA, s.fade));
+              return MATERIALS.buildingRoofCap(use, Math.min(CITY_ALPHA, s.fade));
             }, false),
           ),
           outline: false,

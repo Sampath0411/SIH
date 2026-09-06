@@ -1110,3 +1110,144 @@ corners at low render resolution. No entity count change beyond
 the wall polygons that are gone -- other 2,212 buildings
 unchanged, no data model change, no schema change, no API
 change, no acceptance-script change.
+
+---
+
+## DL-K.2 — City-scale walls get the window texture too
+
+**Why:** the user asked for "windows and all etc" on every
+building, not just the one being inspected. The original DL-K
+explicitly scoped the window grid to the architectural model of
+the active building on three grounds that no longer hold:
+
+- **"A repeating window grid at BUILDING_ALPHA over live imagery
+  beats against the pixels underneath instead of describing a
+  building -- 384 of them turned the city view into moire."** This
+  was a one-time observation before the texture was in colour
+  (DL-K.1: `desaturate()` was being called before the canvas was
+  cached, stripping the warm/dark contrast the eye uses to read
+  "this is glass, that is wall") and before the roof cap was being
+  drawn over the extruded polygon's top face. The texture is now
+  in colour, the cap still closes the top, and the moire beat
+  only gets problematic where the texture pattern is actually
+  visible -- the 1500 m DDC cutoff already hands sub-pixel
+  textures off to BuildingsFarLayer, so buildings past that
+  distance do not moire because their windows are sub-pixel.
+- **"Fenestration is the job of the architectural model of the
+  ONE building being inspected."** This was a scope decision
+  (cost vs. detail at city scale), not a technical barrier. The
+  user is asking to reverse it. The cost is one ImageMaterialProperty
+  per building with a shared canvas -- no new geometry, no per-entity
+  texture upload.
+- **"Frame budget on a 30 fps city view cannot take a quad +
+  polyline per floor per edge per building."** That reasoning
+  applied to the per-floor, per-edge balcony extrusions (a slab
+  polygon + railing polyline per edge per storey per building
+  = 60+ entities per residential high-rise). The window grid is
+  a flat texture on the existing wall polygon, not new geometry.
+
+**The implementation.** `BuildingsLayer.addFootprint` swaps the
+`ColorMaterialProperty` wall for an `ImageMaterialProperty` with
+`windowGrid(use, 3, 3.2)` as the image and a `CallbackProperty`
+returning a WHITE tint at the appropriate alpha. The tile size
+matches `BuildingModelLayer`'s (3 m wide x 3.2 m tall = one bay
+per 3 m, one storey per 3.2 m), so the texture cache key
+`${use}:3:3.2:u` is shared between the city-scale and the
+active-building paths -- the 2,213 city walls reuse the same four
+canvases the active building already paid for.
+
+**White tint, not use-type colour.** The old `ColorMaterialProperty`
+returned `MATERIALS.buildingFacade(use)` = `grey(USE_VALUE[use])`
+at 0.45 alpha. A coloured tint on an `ImageMaterialProperty` would
+multiply the texture's hue away -- a red tint over the warm
+plaster would push it toward grey, and the windows would be even
+less visible than they were under the desaturate. White at 0.45
+keeps the texture's own warm/dark contrast intact: the dark blue
+window pane reads as glass against the warm plaster wall.
+
+**What stayed the same.** The roof cap is still a flat plate
+0.05 m above the wall top in `MATERIALS.buildingRoofCap(use)` --
+the cap's job (close the extruded polygon's top face so the
+window grid does not print on every roof) is unchanged, and it
+is the same one the active building's slab cap is doing per
+storey. Photoreal mode still goes to `MATERIALS.buildingGhost`
+(alpha 0.01) on the tint so the entity stays pickable under
+Google's mesh. Hover / active / fade states return the same
+`Cesium.Color` values the old callback did, just multiplied
+against a white image instead of a grey fill.
+
+**Measurement.** tsc clean. 57/57 unit, 29/29 auth, no test
+changes. The visible change: city-scale buildings now show
+windows (residential = warm plaster + dark blue panes,
+commercial = curtain wall + spandrels, institutional =
+sandstone + arched window, industrial = coated metal + clerestory
+ribbon) instead of a uniform off-white. Buildings past 1500 m
+hand off to the far-tier primitive and are still flat, so the
+overall silhouette of the city is unchanged. No new entities,
+no new geometry, no data model change, no schema change, no
+API change, no acceptance-script change.
+
+---
+
+## DL-K.3 — City buildings are opaque, not translucent shells
+
+**Why:** the user shared a reference image of the active building
+-- a deep navy commercial block and a warm cream residential
+block, both with crisp window grids on every face, and both
+sitting on the imagery as solid volumes. After DL-K.2 put the
+window texture on the city-scale walls but kept them at
+`BUILDING_ALPHA = 0.45`, the buildings read as faint ghosts of
+windows over the satellite imagery, not as buildings: at 0.45
+alpha the imagery underneath (the parcel, the lane, the plot)
+dominated the surface, the texture's warm/dark contrast was
+washed out by the imagery behind it, and the window grid was
+just barely visible as a slightly darker shape. The user was
+explicit: "use this reference image like this the builldings
+should be." That is a solid volume, not a translucent shell.
+
+**The implementation.** `BuildingsLayer` defines a local
+`CITY_ALPHA = 0.95` and uses it for both the wall tint
+(`Cesium.Color.WHITE.withAlpha(CITY_ALPHA)`) and the cap
+(`MATERIALS.buildingRoofCap(use, CITY_ALPHA)`). The historic
+`BUILDING_ALPHA = 0.45` is left in `lib/cesium/materials.ts`
+because it is still the correct resting alpha for OTHER
+translucent surfaces the rest of the app expects (the
+parcel-overlay readouts, the section shell, the floor slab in
+the architectural model) -- it is only the city-scale buildings
+that need to be solid. The local constant makes that scope
+explicit, instead of widening the global one and changing
+five other call sites by accident.
+
+**0.95, not 1.0.** A fully opaque (1.0) edge reads as a
+painted-on decal against a satellite image; a tiny bit of
+softness keeps the boundary of the building from looking
+die-cut. The reference image's buildings are visibly solid, but
+they do not have the harsh cut-out feel of a 1.0 alpha polygon
+over a photograph, so 0.95 is the number that gets the
+"solid volume" feel without the "sticker" feel.
+
+**What stayed the same.** The `windowGrid` texture, the
+per-use-type colour (residential warm plaster, commercial
+curtain wall, institutional sandstone, industrial coated metal),
+the 3 m x 3.2 m tile size shared with `BuildingModelLayer`, the
+roof cap closing the top face, the photoreal `buildingGhost`
+alpha-0.01 still keeping the entity pickable under Google's
+mesh, the hover / active / fade callbacks, the 1500 m DDC
+hand-off to `BuildingsFarLayer`. The transparency slider in the
+UI still works -- the faded branch is now
+`Math.min(CITY_ALPHA, s.fade)` instead of
+`Math.min(BUILDING_ALPHA, s.fade)`, so a slider at 0 still
+fades a non-active building to invisible and a slider at 1
+sits at 0.95.
+
+**Measurement.** tsc clean. 57/57 unit, 29/29 auth, no test
+changes. The visible change: city-scale buildings are now solid
+volumes with the imagery visible AROUND them (parcels, lanes,
+plots, the wider city) and the building's own use-type colour
+and window grid being the surface the viewer sees. The
+"translucent shell over imagery" design of the old BUILDING_ALPHA
+is the documented design for the parcels, the section shell
+and the floor slab in the architectural model; only the
+city-scale building masses change here. No new entities, no
+new geometry, no data model change, no schema change, no
+API change, no acceptance-script change.
