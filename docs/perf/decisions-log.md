@@ -1064,3 +1064,49 @@ Adds at most ~150 entities per active building (≤ 28 storeys
 worst case). Other 2,212 buildings unchanged. No data model
 change, no schema change, no API change, no acceptance-script
 change.
+
+---
+
+## DL-K.1 — Roll back the glass overlay; the windows in the texture are the glass
+
+**Why:** the user reported the active building looked worse than the
+flat extrusion it replaced -- "you have removed colors of the some
+buildings and i cant see glass windows on the building." Tracing
+through the chain:
+
+- `lib/cesium/textures.ts` was calling `desaturate()` on the finished
+  tile before caching. That pass converted the warm plaster wall and
+  the dark-blue window pane to two greys, dropping the only
+  contrast the canvas was using to read "this is glass, that is
+  wall" -- the windows literally were the same shape as the wall,
+  just slightly darker, and at any distance the tile read as a
+  uniform grey block. `desaturate()` was added back when the city
+  path briefly used this texture, but the only caller today is
+  BuildingModelLayer, where the wall is rendered opaque and the
+  warm-vs-dark contrast is the whole point. The desaturate was
+  solving a problem that no longer exists.
+- On top of the desaturated wall, call #1 above stacked a SECOND
+  polygon at +0.001 m proud with a translucent blue
+  `ColorMaterialProperty` (alpha 0.18 / 0.28 commercial). On a
+  texture whose contrast had already been stripped to greyscale,
+  18 % uniform blue was enough to push the residual
+  window-vs-wall contrast below the threshold where the eye
+  picks up the window shape. The intent ("glass on the panes,
+  plaster between") required the texture's own colour contrast
+  to still be there; the desaturate had already taken it away.
+
+Both moves are removed: the second polygon and the `glassOverlay` /
+`glassCurtain` tokens in `lib/cesium/materials.ts` (dead after
+the polygon went), and the `desaturate()` function and its call in
+`textures.ts`. Balconies and the roof-detail upgrade (calls #2 and
+#3 of DL-K) are kept -- the user did not flag them, and on a
+texture that is now in colour they read as drawn, not as printed.
+
+**Measurement.** tsc clean. 57/57 unit, 29/29 auth. The
+architectural model is back to one wall polygon per storey
+(rounded down from two), so the active building renders slightly
+faster and no longer risks the +0.001 m z-bias showing at the
+corners at low render resolution. No entity count change beyond
+the wall polygons that are gone -- other 2,212 buildings
+unchanged, no data model change, no schema change, no API
+change, no acceptance-script change.

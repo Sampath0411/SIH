@@ -21,45 +21,17 @@ import type { UseType } from '@/lib/types';
  * tile around the whole perimeter, so a high-contrast tile would strobe into
  * vertical stripes exactly like the ones this drawing replaced. Details are
  * carried by shading (sills, coursing, spandrels), not by tonal extremes.
+ *
+ * COLOUR: the tile leaves the cache with its drawing intact, including hue.
+ * This module is consumed only by the architectural model of the ONE active
+ * building (see BuildingModelLayer), where the wall is rendered opaque and
+ * the contrast between the warm plaster and the dark window pane is what
+ * reads as "this is glass, that is wall" at a glance. Stripping hue here
+ * would collapse that to "two greys" and the windows would vanish.
  */
 
 const PX_PER_M = 24;
 const cache = new Map<string, HTMLCanvasElement>();
-
-/**
- * Strip every trace of hue from a finished tile.
- *
- * The drawers below still describe their materials in the tones a real facade
- * has -- warm plaster, cool glass, sandstone coursing -- because that is what
- * produces believable SHADING: the sills, spandrels, mullions and coursing all
- * depend on tonal relationships that were tuned by eye. Converting those
- * relationships to grey by hand, fifty literals at a time, would have quietly
- * flattened half of them.
- *
- * So the drawing is left alone and the hue is removed at the end, in one place
- * that cannot be bypassed. Rec. 709 luma is used rather than a channel average
- * so that a mid blue pane and a mid tan wall do not collapse to the same grey
- * -- perceptual weight is exactly what has to survive.
- *
- * Runs once per cached tile (there are at most eight), so the per-pixel pass
- * costs nothing at render time.
- */
-function desaturate(ctx: CanvasRenderingContext2D, w: number, h: number): void {
-  // A tainted or zero-sized canvas cannot be read back. Returning the tile
-  // undesaturated is far better than throwing during scene construction.
-  let img: ImageData;
-  try {
-    img = ctx.getImageData(0, 0, w, h);
-  } catch {
-    return;
-  }
-  const d = img.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const y = 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
-    d[i] = d[i + 1] = d[i + 2] = y;
-  }
-  ctx.putImageData(img, 0, 0);
-}
 
 export function windowGrid(
   use: UseType,
@@ -110,9 +82,6 @@ export function windowGrid(
   ctx.fillRect(0, Math.round(h * 0.78), w, h - Math.round(h * 0.78));
   ctx.fillStyle = 'rgba(255,255,255,0.05)';
   ctx.fillRect(0, 0, w, Math.max(1, Math.round(PX_PER_M * 0.08)));
-
-  // Last step before caching: the tile leaves here neutral, always.
-  desaturate(ctx, w, h);
 
   cache.set(key, canvas);
   return canvas;

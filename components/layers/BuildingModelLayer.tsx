@@ -122,9 +122,12 @@ export default function BuildingModelLayer() {
     // A narrower wall tile (one bay per 3 m, not 4) so the model reads with
     // finer fenestration rhythm than the city-scale extrusions. Storey 0
     // takes a ground-floor variant whose bay carries an entry door.
-    // The tile leaves textures.ts neutral, so this tint is what makes the
-    // model read as built form rather than as a white block: WHITE here left
-    // the walls the one grey object in a green scene.
+    // The wall is one polygon: the texture's own contrast between the warm
+    // plaster and the dark window pane is what reads as "this is glass, that
+    // is wall" at a glance. A previous version stacked a second translucent
+    // blue polygon on top of the wall as a "glass overlay" -- it worked
+    // against the contrast instead of with it, washing the windows out, so
+    // it has been removed (see DL-K in docs/perf/decisions-log.md).
     const wallCanvas = windowGrid(use, 3, FLOOR_H);
     const wallTexture = new Cesium.ImageMaterialProperty({
       image: wallCanvas,
@@ -135,19 +138,6 @@ export default function BuildingModelLayer() {
       image: groundCanvas,
       color: MATERIALS.buildingModelWall,
     });
-
-    // Glass overlay material -- a translucent blue, drawn on top of each
-    // storey's wall as a SECOND polygon at +0.001 m proud. The +0.001 m
-    // horizontal bias is the same trick InfraSiteLayer uses for its
-    // selection highlight (see InfraSiteLayer.tsx) and is what defeats
-    // the z-fight the textured wall underneath would otherwise win.
-    // Curtain wall (commercial) takes a stronger tint because the dark
-    // spandrels in the texture would otherwise swallow a 0.18 alpha
-    // overlay. The slab cap is still drawn ON TOP, opaque, so the top
-    // face of every storey stays correct.
-    const glassMat = new Cesium.ColorMaterialProperty(
-      use === 'commercial' ? MATERIALS.glassCurtain : MATERIALS.glassOverlay,
-    );
 
     // Above-ground storeys 0..floors-1, then any basements as a solid grey
     // mass below grade. Each storey lifts by its own index when exploded.
@@ -169,28 +159,6 @@ export default function BuildingModelLayer() {
           material: i === 0 ? groundTexture : wallTexture,
           outline: true,
           outlineColor: MATERIALS.buildingModelRoofLine,
-          shadows: shadowsRef.current,
-        },
-      });
-      // Glass overlay: a second polygon at the same height range, +0.001
-      // m proud, with a translucent blue. Reads as actual glass on the
-      // panes without washing out the window grid + door + spandrel
-      // contrast the texture is doing. Drawn after the wall so it
-      // composites over it; drawn before the slab cap so the cap still
-      // closes the storey on top.
-      ds.entities.add({
-        polygon: {
-          hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
-          height: new Cesium.CallbackProperty(
-            () => z0 + liftFor(i) + 0.001,
-            false,
-          ),
-          extrudedHeight: new Cesium.CallbackProperty(
-            () => z0 + FLOOR_H + liftFor(i) + 0.001,
-            false,
-          ),
-          material: glassMat,
-          outline: false,
           shadows: shadowsRef.current,
         },
       });
