@@ -142,5 +142,6 @@
       }
     }
   ],
+  "aoi": "Visakhapatnam Central Corridor",
   "_disclaimer": "DERIVED for demonstration from the site specifications in data/api/vizag-infra/infra/ — not a survey, a cadastral record or an as-built drawing."
 }

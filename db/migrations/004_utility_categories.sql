@@ -22,6 +22,18 @@
 -- it onto the electrical category, and renaming it would mean rewriting those
 -- rows and both committed snapshots to change a label the user never sees.
 
+-- The whole migration is a single transaction. psql's default is auto-commit
+-- per statement, and a CHECK that fails on the ADD CONSTRAINT half (a row
+-- from a future exporter setting a value the table never allowed) would
+-- leave the schema half-migrated: new CHECK gone, columns added, the
+-- constraint never reinstated. ON_ERROR_STOP plus BEGIN/COMMIT is the
+-- psql-native way to say "stop the script and roll back together". The
+-- apply path in scripts/db_schema.mjs runs the file once; a half-applied
+-- migration there would surface as the very next test failing for a
+-- reason nobody can see in a code review.
+\set ON_ERROR_STOP on
+BEGIN;
+
 ALTER TABLE utility DROP CONSTRAINT IF EXISTS utility_asset_type_check;
 
 ALTER TABLE utility
@@ -59,3 +71,6 @@ ALTER TABLE utility DROP CONSTRAINT IF EXISTS utility_provenance_check;
 ALTER TABLE utility
   ADD CONSTRAINT utility_provenance_check
   CHECK (provenance IN ('demonstration', 'estimated', 'surveyed'));
+
+COMMIT;
+

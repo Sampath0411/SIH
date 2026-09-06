@@ -352,7 +352,11 @@ const DISCLAIMER = 'DERIVED for demonstration from the site specifications in '
 
 writeJson(path.join(OUT, 'buildings.json'), fc(buildings, { aoi: NAME, _disclaimer: DISCLAIMER }));
 writeJson(path.join(OUT, 'parcels.json'), fc(parcels, { _disclaimer: DISCLAIMER }));
-writeJson(path.join(OUT, 'roads.json'), fc(roads, { _disclaimer: DISCLAIMER }));
+// Roads carry the AOI string. RoadsLayer reads it to label the legend in the
+// same way ParcelsLayer does, and the byte-identical `x-ulpin-aoi` header on
+// /api/roads is derived from this field. Without it the road endpoint answers
+// `{aoi: undefined}` and the legend header reads "roads" with no locality.
+writeJson(path.join(OUT, 'roads.json'), fc(roads, { aoi: NAME, _disclaimer: DISCLAIMER }));
 writeJson(path.join(OUT, 'utilities.json'), fc(utilities, {
   _disclaimer: 'DEMONSTRATION DATA. No utility survey was consulted. Alignments '
     + 'follow the derived street centrelines; depths are the nominal band for '
@@ -417,8 +421,16 @@ const row = {
   stats,
 };
 const i = registry.projects.findIndex((p) => p.slug === SLUG);
-if (i >= 0) registry.projects[i] = row;
-else registry.projects.push(row);
+if (i >= 0) {
+  // MERGE, do not replace. A new run of this script must not destroy a field
+  // it does not write: a future change may add a column (or any other
+  // attribute) by hand-editing the registry, and the next re-export would
+  // silently drop it. The fields the script does set win on merge, which is
+  // what a re-export means.
+  registry.projects[i] = { ...registry.projects[i], ...row };
+} else {
+  registry.projects.push(row);
+}
 writeJson(registryPath, registry);
 
 console.log(`${SLUG}: ${sites.length} sites, `
