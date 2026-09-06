@@ -1236,7 +1236,7 @@ export default function DetailPanel() {
                   · {c.authority} · level {c.level_no}
                 </span>
               </span>
-              <span className={`text-[10px] ${c.status === 'operational' ? 'text-dangerInk' : 'text-dangerInkInk/80'}`}>
+              <span className={`text-[10px] ${c.status === 'operational' ? 'text-dangerInk' : 'text-dangerInk/80'}`}>
                 {c.status}
               </span>
             </button>

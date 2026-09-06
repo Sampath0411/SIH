@@ -469,7 +469,7 @@ export default function CesiumRoot(
     const tileset = tilesetRef.current;
     if (!tileset || tileset.isDestroyed()) return;
     applyPhotorealTranslucency(tileset, underground);
-  }, [underground, buildingStyle, ctx.viewer]);
+  }, [underground, ctx.viewer]);
 
   // ---- terrain provider + globe visibility --------------------------------
   // One effect owns both, because in photoreal mode they move together: the

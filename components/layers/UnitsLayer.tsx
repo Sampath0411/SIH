@@ -53,6 +53,13 @@ interface UnitState {
   /** Bumped whenever the section plane moves; see lib/cesium/section.ts. */
   sliceVersion: number;
   plane: HalfPlane | null;
+  /**
+   * Re-arm the rAF driver from the store-sync effect when a fadeTarget
+   * change arrives while the driver is parked. Set by the rAF effect
+   * itself and cleared on its cleanup; the store-sync effect calls it
+   * after a `fadeTarget` write so the eased animation actually runs.
+   */
+  armFade: (() => void) | null;
 }
 
 /** Per frame, ~600 ms to settle. Matches BuildingsLayer's fade. */
@@ -103,7 +110,7 @@ export default function UnitsLayer() {
   const stateRef = useRef<UnitState>({
     mode: 'city', isolated: null, selectedId: null, hoveredId: null,
     anySelected: false, explodeT: 0, sliced: false, fade: 0, fadeTarget: 0,
-    sliceVersion: 0, plane: null,
+    sliceVersion: 0, plane: null, armFade: null,
   });
   const dsRef = useRef<Cesium.CustomDataSource | null>(null);
 
@@ -126,9 +133,16 @@ export default function UnitsLayer() {
     // the fade target goes to zero -- derived from the mode, never written
     // back into layers.floors, so leaving the mode restores what the user
     // had.
-    s.fadeTarget = underground
+    const next = underground
       ? 0
       : opacityFor(mode, isolatedFloor, explodeT, slice.enabled, showFloors);
+    if (next !== s.fadeTarget) {
+      s.fadeTarget = next;
+      // Re-arm the rAF driver if it is parked at the previous target.
+      // Without this, a target change arriving while parked would be
+      // visible as "the layer suddenly snaps" instead of easing.
+      s.armFade?.();
+    }
   }, [mode, isolatedFloor, selectedUnitId, hoveredUnitId, explodeT,
       slice.enabled, showFloors, underground]);
 
@@ -191,10 +205,19 @@ export default function UnitsLayer() {
       const slot = slotOf.get(uid) ?? 0;
       // The signed-in citizen's own flat. Matched on (level, code) because
       // that is what the session carries -- see ownsUnit in lib/auth.
-      const sess = useViewStore.getState().session;
-      const isOwn = sess.role === 'citizen'
-        && sess.floor === unit.level_no
-        && sess.unit === unit.unit_no;
+      //
+      // Read fresh inside the CallbackProperty rather than captured at
+      // build time: a logout that does not change `activeBuildingId`
+      // (e.g. the citizen never picks a unit) would otherwise leave every
+      // flat styled as "neighbour" for the rest of the session. The
+      // CallbackProperty is per-frame, but `getState()` is a non-
+      // subscribing read, so the cost is one pointer chase per render.
+      const isOwn = (): boolean => {
+        const sess = useViewStore.getState().session;
+        return sess.role === 'citizen'
+          && sess.floor === unit.level_no
+          && sess.unit === unit.unit_no;
+      };
 
       const floorZ0 = toSceneZ(entry.f.z_min, bprops.ground_elev, terrainH);
       const floorZ1 = toSceneZ(entry.f.z_max, bprops.ground_elev, terrainH);
@@ -273,7 +296,7 @@ export default function UnitsLayer() {
               // Own flat first: for a citizen this is the one thing on screen
               // that has to stay findable, including while something else is
               // selected and it is being dimmed.
-              if (isOwn) return MATERIALS.unitOwn(a);
+              if (isOwn()) return MATERIALS.unitOwn(a);
               // A flat that cannot be opened does not offer itself: no tint of
               // its own, no hover response. It is massing, so the floor reads
               // as a real floor and the citizen's own flat reads as the one
@@ -290,7 +313,7 @@ export default function UnitsLayer() {
           outlineWidth: 2,
           outlineColor: new Cesium.CallbackProperty(
             () => {
-              if (isOwn) return MATERIALS.unitOwnOutline;
+              if (isOwn()) return MATERIALS.unitOwnOutline;
               return stateRef.current.selectedId === uid
                 ? MATERIALS.unitOutline
                 : MATERIALS.unitOutlineIdle;
@@ -356,24 +379,46 @@ export default function UnitsLayer() {
   }, [viewer, ready, ground, detail, activeBuildingId, footprint]);
 
   // ---- one animation driver for the whole layer ---------------------------
+  //
+  // The previous shape kept re-scheduling `requestAnimationFrame(step)`
+  // for the page's life, even when fade was already at target. Cesium
+  // runs on a request-render model, so a 60 Hz wakeup with nothing to
+  // do is pure overhead: the scene is being re-rendered just to confirm
+  // it does not need to be. The driver now parks itself when settled
+  // and is re-armed from the store-sync effect above whenever the
+  // computed `fadeTarget` actually moves.
   useEffect(() => {
     let raf = 0;
+    let parked = true;
+    const arm = () => {
+      if (parked) {
+        parked = false;
+        raf = requestAnimationFrame(step);
+      }
+    };
+    stateRef.current.armFade = arm;
     const step = () => {
       const s = stateRef.current;
       const delta = s.fadeTarget - s.fade;
       if (Math.abs(delta) > 0.002) {
         s.fade += delta * FADE_RATE;
-        // The scene renders on demand, so an eased value that nothing else is
-        // touching needs to ask for the frames it is animating over.
         if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
-      } else if (s.fade !== s.fadeTarget) {
-        s.fade = s.fadeTarget;
-        if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+        raf = requestAnimationFrame(step);
+      } else {
+        if (s.fade !== s.fadeTarget) {
+          s.fade = s.fadeTarget;
+          if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+        }
+        parked = true;
+        raf = 0;
       }
-      raf = requestAnimationFrame(step);
     };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
+    arm();
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      parked = true;
+      stateRef.current.armFade = null;
+    };
   }, [viewer]);
 
   return null;

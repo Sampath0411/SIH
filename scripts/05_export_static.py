@@ -221,10 +221,28 @@ def main():
 
     registry_path = os.path.join(DATA, "api", "projects.json")
     registry = json.loads(pg.scalar(REGISTRY))
+    # Merge with any project rows the database does not know about.
+    # vizag-infra is a snapshot-only project (no `projects` row), but
+    # an `npm run seed` of a different project would otherwise delete
+    # it from the registry, and the gallery would no longer render it.
+    # Snapshot-only rows carry the `aoi` field that the building
+    # registry merges in (see scripts/build_vizag_infra.mjs), so any
+    # already-present row keeps its extras through the merge.
+    existing = {}
+    if os.path.exists(registry_path):
+        try:
+            with open(registry_path, "r", encoding="utf-8") as fh:
+                for row in json.load(fh).get("projects", []):
+                    existing[row["slug"]] = row
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+    for row in registry["projects"]:
+        existing[row["slug"]] = {**existing.get(row["slug"], {}), **row}
+    merged = {"projects": list(existing.values())}
     with open(registry_path, "w", encoding="utf-8") as fh:
-        json.dump(registry, fh, indent=2)
+        json.dump(merged, fh, indent=2)
         fh.write("\n")
-    print(f"  {'projects.json':<18} {len(registry['projects']):>6} project(s)")
+    print(f"  {'projects.json':<18} {len(merged['projects']):>6} project(s)")
     print("  stats: " + ", ".join(f"{k}={v}" for k, v in sorted(stats.items())))
     print("done")
 

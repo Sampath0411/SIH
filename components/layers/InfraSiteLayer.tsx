@@ -2,7 +2,7 @@
 
 import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
 import { useDataStore, useEnsureSite, useSiteIndex, useViewStore } from '@/lib/store';
 import {
@@ -132,6 +132,16 @@ export default function InfraSiteLayer() {
   useEffect(() => {
     if (!viewer || !ready || !site || viewer.isDestroyed()) return;
 
+    // Late-slice teardown: flipped false in the cleanup so a slice still
+    // in flight when the site changes (or the viewer is destroyed) skips
+    // the entity add rather than writing into a disposed bucket. The
+    // other near-tier layers (BuildingsLayer, BuildingsFarLayer) hold
+    // the same flag and check it at the top of their step. Without
+    // this, a 48-component first slice crossing a site change leaves
+    // 0..48 dangling entities for the bucket's dispose to clean up,
+    // and the entity-id space can collide with the next site's tags.
+    const aliveRef = { current: true };
+
     const points: [number, number][] = [];
     for (const c of site.components) {
       if (c.kind === 'road') continue;
@@ -176,6 +186,7 @@ export default function InfraSiteLayer() {
      * fighting each other over the junction.
      */
     const addComponent = (c: PlacedComponent) => {
+      if (!aliveRef.current) return;
       if (c.kind === 'road') return;
       const material = materialFor(c.kind);
       const distanceDisplayCondition = conditionFor(c.lod);
@@ -228,6 +239,7 @@ export default function InfraSiteLayer() {
     });
 
     return () => {
+      aliveRef.current = false;
       cancelBuild();
       grid.dispose();
     };

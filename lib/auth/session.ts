@@ -172,7 +172,13 @@ export function decodeSession(raw: string | undefined | null): SessionClaims | n
     return null;
   }
   if (!isClaims(parsed)) return null;
-  if (Date.now() > parsed.exp) return null;
+  const now = Date.now();
+  // Two time checks, both enforced: the absolute ceiling so a token that
+  // was somehow issued with a long exp cannot outlive the cap, and the
+  // exp itself so an expired token is rejected even if the iat cap
+  // was disabled by a malformed iat in the past.
+  if (now > parsed.exp) return null;
+  if (now > parsed.iat + MAX_SESSION_AGE_MS) return null;
   if (getRevoked().has(parsed.sid)) return null;
   return parsed;
 }
@@ -180,6 +186,12 @@ export function decodeSession(raw: string | undefined | null): SessionClaims | n
 /**
  * Validate the shape of a parsed JSON. Cheap, does not enforce role-specific
  * fields -- callers that need them (e.g. requireCitizen) check those.
+ *
+ * Number checks use Number.isFinite rather than `typeof === 'number'` so
+ * NaN, Infinity and -Infinity are rejected. The cache key and the citizen
+ * filters both treat claims as numbers in comparisons; a cookie carrying
+ * `buildingId: NaN` would otherwise compare as "never equal to any real
+ * id" and silently turn every filter into a no-op.
  */
 function isClaims(v: unknown): v is SessionClaims {
   if (typeof v !== 'object' || v === null) return false;
@@ -187,12 +199,17 @@ function isClaims(v: unknown): v is SessionClaims {
   if (typeof o.sid !== 'string' || o.sid.length === 0) return false;
   if (o.role !== 'citizen' && o.role !== 'gov') return false;
   if (typeof o.sub !== 'string' || o.sub.length === 0) return false;
-  if (typeof o.iat !== 'number' || typeof o.exp !== 'number') return false;
-  if (o.exp <= o.iat) return false;
+  if (!Number.isFinite(o.iat) || !Number.isFinite(o.exp)) return false;
+  // Hoist the two finite numbers so the rest of the function reads
+  // them as `number` (Number.isFinite only narrows its own argument,
+  // not other properties on the same object).
+  const iat = o.iat as number;
+  const exp = o.exp as number;
+  if (exp <= iat) return false;
   if (o.role === 'citizen') {
     if (typeof o.slug !== 'string') return false;
-    if (typeof o.buildingId !== 'number') return false;
-    if (typeof o.floor !== 'number') return false;
+    if (!Number.isFinite(o.buildingId)) return false;
+    if (!Number.isFinite(o.floor)) return false;
     if (typeof o.unit !== 'string') return false;
     if (typeof o.name !== 'string') return false;
   } else {
@@ -212,6 +229,13 @@ export function makeCitizenSession(input: {
   ttlMs?: number;
 }): CitizenClaims {
   const now = Date.now();
+  // Clamp ttlMs to the absolute ceiling. A caller that asks for a 10-year
+  // session is a bug or an attacker; the cap is the longest a session is
+  // allowed to live regardless of how it was issued, and clamping at
+  // issuance keeps decodeSession's read-time check (now > iat + 30d) and
+  // buildSetCookie's write-time check from disagreeing.
+  const requested = input.ttlMs ?? DEFAULT_TTL_MS;
+  const ttl = Math.min(Math.max(requested, 0), MAX_SESSION_AGE_MS);
   return {
     sid: randomBytes(16).toString('hex'),
     role: 'citizen',
@@ -222,7 +246,7 @@ export function makeCitizenSession(input: {
     floor: input.floor,
     unit: input.unit,
     iat: now,
-    exp: now + (input.ttlMs ?? DEFAULT_TTL_MS),
+    exp: now + ttl,
   };
 }
 
@@ -232,13 +256,15 @@ export function makeGovSession(input: {
   ttlMs?: number;
 }): GovClaims {
   const now = Date.now();
+  const requested = input.ttlMs ?? DEFAULT_TTL_MS;
+  const ttl = Math.min(Math.max(requested, 0), MAX_SESSION_AGE_MS);
   return {
     sid: randomBytes(16).toString('hex'),
     role: 'gov',
     sub: input.email,
     name: input.name,
     iat: now,
-    exp: now + (input.ttlMs ?? DEFAULT_TTL_MS),
+    exp: now + ttl,
   };
 }
 
@@ -251,7 +277,17 @@ export function sessionFromCookieHeader(cookieHeader: string | null): SessionCla
     if (eq < 0) continue;
     const name = p.slice(0, eq).trim();
     if (name !== COOKIE_NAME) continue;
-    return decodeSession(decodeURIComponent(p.slice(eq + 1)));
+    // decodeURIComponent throws URIError on a malformed percent-encoded
+    // sequence (e.g. "%E0%A4%A"). That would surface as a 500 from every
+    // authed route, so the call is wrapped: a malformed value is treated
+    // as an invalid cookie, same shape as a bad signature.
+    let value: string;
+    try {
+      value = decodeURIComponent(p.slice(eq + 1));
+    } catch {
+      return null;
+    }
+    return decodeSession(value);
   }
   return null;
 }
@@ -276,7 +312,15 @@ export function buildSetCookie(
   const now = Date.now();
   const absoluteCeiling = claims.iat + MAX_SESSION_AGE_MS;
   const slidingCeiling = now + DEFAULT_TTL_MS;
-  const newExp = Math.min(claims.exp, slidingCeiling, absoluteCeiling);
+  // Drop `claims.exp` from the min. claims.exp was set at login to
+  // `login_time + DEFAULT_TTL_MS`; for any session older than a few
+  // seconds, `claims.exp <= slidingCeiling` and the min would pick
+  // `claims.exp`, leaving the wall clock at its original position and
+  // silently expiring the session the moment the original 24h is up
+  // regardless of activity. The intent is to refresh to now + TTL only
+  // as long as the absolute age stays within the cap, so the min is
+  // over the two ceilings, not the old exp.
+  const newExp = Math.min(slidingCeiling, absoluteCeiling);
   const value = encodeSession(newExp === claims.exp ? claims : { ...claims, exp: newExp });
   const remaining = Math.max(0, Math.floor((newExp - now) / 1000));
   const parts = [

@@ -116,10 +116,15 @@ const PUBLIC_UNIT_FIELDS = [
  * response in devtools, so a filter that runs in the browser is decoration.
  */
 export function filterDetailForCaller<
-  T extends { units?: UnitLike[] },
+  T extends { units?: UnitLike[]; floors?: unknown[] },
 >(ctx: CallerContext, detail: T): T {
   if (ctx.kind !== 'citizen') return detail;
   const units = Array.isArray(detail.units) ? detail.units : [];
+  // Floors carry only geometry and label data today -- z-range, the
+  // per-floor ULPIN, the level number, the floor plan -- nothing that
+  // names who lives on the floor. They are passed through unchanged,
+  // but the type carries the field explicitly so a future per-floor
+  // sensitive field would surface here as a type error, not as a leak.
   return {
     ...detail,
     units: units.map((u) => {

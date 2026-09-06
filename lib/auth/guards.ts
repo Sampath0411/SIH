@@ -67,9 +67,14 @@ export function requireCitizen(req: Request): GuardResult<CitizenClaims> {
       ),
     };
   }
-  // Sliding refresh: the cookie is re-issued on every read so a 24h session
-  // rolls forward as long as the citizen keeps using the site.
-  return { kind: 'ok', claims: { ...claims, exp: Date.now() + 24 * 60 * 60 * 1000 } };
+  // Returns the verified claims unmodified. The previous shape rewrote
+  // `exp` in memory but never wrote a Set-Cookie, so the browser kept the
+  // original cookie with its original exp and the route that adopted
+  // these guards would silently believe the session had been extended.
+  // The sliding refresh is buildSetCookie(claims) on the response, which
+  // the call site does explicitly so the cookie it ships is the one whose
+  // Max-Age was just computed.
+  return { kind: 'ok', claims };
 }
 
 export function requireGov(req: Request): GuardResult<GovClaims> {
@@ -93,7 +98,7 @@ export function requireGov(req: Request): GuardResult<GovClaims> {
       ),
     };
   }
-  return { kind: 'ok', claims: { ...claims, exp: Date.now() + 24 * 60 * 60 * 1000 } };
+  return { kind: 'ok', claims };
 }
 
 /** Aadhar masked for logging. The middle 8 digits are replaced. */

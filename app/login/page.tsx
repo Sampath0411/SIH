@@ -41,17 +41,25 @@ export default async function LoginPage({
   // unauthenticated visitor. It must round-trip back to the page they were
   // trying to reach, not be silently dropped. The validation here is
   // deliberately tight: only an internal path that begins with /p/<slug>
-  // for a slug the registry knows about, so the parameter cannot be used
-  // as an open redirect to an attacker URL. Anything else falls back to
-  // the login's own default (the user's project, or the gallery).
+  // for a slug the registry knows about, with NOTHING after the slug
+  // (no slash, query, fragment, or path-traversal), so the parameter
+  // cannot be used as an open redirect to an attacker URL. Anything
+  // else falls back to the login's own default.
   const params = await searchParams;
   const safeNext = (() => {
     const candidate = params.next;
     if (typeof candidate !== 'string') return null;
     if (!candidate.startsWith('/p/')) return null;
-    const slug = candidate.slice(3).split(/[/?#]/, 1)[0];
-    if (!isValidSlug(slug)) return null;
-    if (!projects.some((p) => p.slug === slug)) return null;
+    const rest = candidate.slice(3);
+    // Reject any path that has anything past the slug: a second `/`
+    // (e.g. /p/siripuram/../admin), a `?`, a `#`, or a percent-encoded
+    // sibling. router.push resolves the path client-side, so a value of
+    // `/p/siripuram/../admin` would land the user on `/admin` -- a
+    // same-origin redirect, not a cross-origin open redirect, but still
+    // outside the validator's stated intent.
+    if (!/^[A-Za-z0-9_-]+$/.test(rest)) return null;
+    if (!isValidSlug(rest)) return null;
+    if (!projects.some((p) => p.slug === rest)) return null;
     return candidate;
   })();
 

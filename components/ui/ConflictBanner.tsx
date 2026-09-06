@@ -61,7 +61,13 @@ export default function ConflictBanner() {
           <button
             key={c.id}
             type="button"
-            aria-label={`Select utility ${c.building_ulpin}`}
+            // The click selects a utility (by id) and the visible text is
+            // the building ULPIN. Earlier versions had `aria-label="Select
+            // utility <building_ulpin>"` which read as if the building
+            // were the utility; a screen reader user following the spoken
+            // label landed on the wrong entity. The label now names both,
+            // and matches the visible text.
+            aria-label={`Select utility ${c.utility_id} in ${c.building_ulpin}`}
             onClick={() => selectUtility(c.utility_id)}
             className={[
               'rounded px-1.5 py-0.5 font-mono text-[9px] transition-colors',

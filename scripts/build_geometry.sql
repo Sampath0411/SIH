@@ -127,9 +127,15 @@ SELECT
 FROM stage_building;
 
 -- MakeValid can return collections; keep the largest polygon component.
+-- The previous shape used `UPDATE ... FROM (SELECT ... ORDER BY ...)`,
+-- but PostgreSQL does NOT honour ORDER BY for the row a FROM-clause
+-- join selects, so the "largest polygon" intent was a coin-flip on a
+-- MultiPolygon footprint. DISTINCT ON keeps the highest-area row per
+-- osm_id, deterministically, and the join on pk gives a one-row-per-
+-- source update that does the same job.
 UPDATE b_norm SET geom4326 = sub.geom
 FROM (
-  SELECT n.osm_id, d.geom
+  SELECT DISTINCT ON (n.osm_id) n.osm_id, d.geom
     FROM b_norm n,
          LATERAL (SELECT (ST_Dump(n.geom4326)).geom AS geom) d
    WHERE ST_GeometryType(d.geom) = 'ST_Polygon'

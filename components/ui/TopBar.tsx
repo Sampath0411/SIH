@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDataStore, useViewStore } from '@/lib/store';
 import { parse } from '@/lib/ulpin';
 import SessionChip from '@/components/auth/SessionChip';
@@ -49,6 +49,16 @@ export default function TopBar({
 } = {}) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  // The blur handler delays the close by 140 ms so a click on a result
+  // lands before the menu disappears. The timer must be cleared on
+  // unmount, otherwise an unmount within that window fires setState on
+  // an unmounted component and (in dev) the React warning fires; in
+  // production the warning is silent and the call is a no-op, but the
+  // setTimeout keeps the closure alive for the remaining time.
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
   const buildings = useDataStore((s) => s.buildings);
   const parcels = useDataStore((s) => s.parcels);
   const selectBuilding = useViewStore((s) => s.selectBuilding);
@@ -119,7 +129,10 @@ export default function TopBar({
             setOpen(true);
           }}
           onFocus={() => setOpen(true)}
-          onBlur={() => setTimeout(() => setOpen(false), 140)}
+          onBlur={() => {
+            if (closeTimer.current) clearTimeout(closeTimer.current);
+            closeTimer.current = setTimeout(() => setOpen(false), 140);
+          }}
           placeholder="Search ULPIN, address or owner…"
           className="h-7 w-full rounded border border-[rgb(var(--edge))] bg-[rgb(var(--surface-2))] px-2 text-[12px] text-[rgb(var(--ink))] placeholder:text-[rgb(var(--muted))] focus:border-[rgb(var(--accent))]"
         />

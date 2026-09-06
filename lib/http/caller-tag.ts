@@ -95,7 +95,20 @@ export function callerTagFromCookie(cookieHeader: string | null): string {
  */
 export function callerTagFromCtx(ctx: CallerContext): string {
   if (ctx.kind === 'citizen') {
-    return `citizen:${ctx.slug}:${ctx.buildingId}:${ctx.floor}:${ctx.unit}`;
+    // Sanitise the four claim components that name the citizen. isClaims
+    // in lib/auth/session.ts already rejects non-finite numbers, so this
+    // is the second line of defence for cache-key components read from
+    // contexts that did not go through decodeSession (defensive, cheap,
+    // and the same shape the cookie-tag path uses for the same reason).
+    // A NaN or Infinity here would interpolate as "NaN" / "Infinity" and
+    // collapse every such claim into the same bucket, which is the
+    // cross-citizen leak this module was written to prevent.
+    return `citizen:${ctx.slug}:${finiteOr(ctx.buildingId, '?')}`
+      + `:${finiteOr(ctx.floor, '?')}:${ctx.unit}`;
   }
   return ctx.kind;
+}
+
+function finiteOr(n: number, fallback: string): string {
+  return Number.isFinite(n) ? String(n) : fallback;
 }

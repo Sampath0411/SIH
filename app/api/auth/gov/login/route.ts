@@ -61,7 +61,13 @@ export async function POST(req: Request) {
 
   const claims = makeGovSession({
     email: payload.email.toLowerCase(),
-    name: payload.email.split('@')[0] ?? payload.email,
+    // Lower-case the email BEFORE extracting the local part, so the
+    // displayed name and the canonical sub agree on casing. A login
+    // typed as Admin@Sampath.gov.in otherwise produces sub=
+    // "admin@sampath.gov.in" but name="Admin", and the header greeting
+    // shows whatever the caller typed instead of the canonical
+    // address the cookie stores.
+    name: payload.email.toLowerCase().split('@')[0] ?? payload.email.toLowerCase(),
   });
 
   const setCookie = buildSetCookie(claims, { secure: isHttpsRequest(req) });

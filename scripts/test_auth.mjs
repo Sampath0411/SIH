@@ -329,6 +329,38 @@ await test('buildSetCookie: a fresh session refreshes to a 24h Max-Age', () => {
     `expected ~24h Max-Age for a fresh session, got ${maxAge}`);
 });
 
+await test('buildSetCookie: a 12h-old session refreshes to a fresh 24h Max-Age', () => {
+  // The fresh-session test above exercises age 0, where the bug in the
+  // old `Math.min(claims.exp, slidingCeiling, absoluteCeiling)` was
+  // invisible (claims.exp == slidingCeiling). Synthesise a 12h-old
+  // session by hand: iat 12h in the past, exp 12h in the future, and
+  // confirm the rebuilt cookie's Max-Age is ~24h, not "12h left of the
+  // original". Without the fix this test would see Max-Age = 12h.
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const fresh = makeGovSession({ email: 'admin@sampath.gov.in', name: 'Admin' });
+  const aged = { ...fresh, iat: now - 12 * 60 * 60 * 1000, exp: now + 12 * 60 * 60 * 1000 };
+  const cookie = buildSetCookie(aged);
+  const m = /Max-Age=(\d+)/.exec(cookie);
+  assert.ok(m, 'Max-Age must be present');
+  const maxAge = Number(m[1]);
+  assert.ok(maxAge > 23 * 3600 && maxAge <= 24 * 3600,
+    `expected ~24h Max-Age for a 12h-old session, got ${maxAge} `
+    + `(would be 12h if claims.exp were in the Math.min)`);
+  // And confirm the absolute ceiling is honoured: a session whose
+  // iat + 30d is in the past yields Max-Age = 0, not a refresh past
+  // the cap. The earlier "older than 30d" test already covers the
+  // expired case; this is the boundary where iat is older than 30d
+  // but exp is still in the future (i.e. an issued-in-the-past claim
+  // that has not yet hit its nominal exp).
+  const ancient = { ...fresh, iat: now - 31 * day, exp: now + 1 * 60 * 60 * 1000 };
+  const cookie2 = buildSetCookie(ancient);
+  const m2 = /Max-Age=(\d+)/.exec(cookie2);
+  assert.ok(m2);
+  const maxAge2 = Number(m2[1]);
+  assert.ok(maxAge2 <= 0, `expected Max-Age=0 once iat+30d is past, got ${maxAge2}`);
+});
+
 // ---- unit-level filtering on the real detail snapshot ----------------------
 const RAVI = { kind: 'citizen', slug: 'siripuram', buildingId: 999, floor: 2, unit: '201' };
 
