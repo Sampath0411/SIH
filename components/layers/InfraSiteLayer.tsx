@@ -2,7 +2,7 @@
 
 import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
 import { useDataStore, useEnsureSite, useSiteIndex, useViewStore } from '@/lib/store';
 import {
@@ -118,16 +118,15 @@ export default function InfraSiteLayer() {
    * is derived from `site` and rebuilding it is free, so putting it in state
    * would only add a render.
    */
-  const byPickId = useRef(new Map<number, PlacedComponent>());
-  byPickId.current = useMemo(() => {
+  const byPickId = useMemo(() => {
     const m = new Map<number, PlacedComponent>();
     for (const c of site?.components ?? []) m.set(c.pickId, c);
     return m;
   }, [site]);
   useEffect(() => {
-    componentIndex = byPickId.current;
+    componentIndex = byPickId;
     return () => { componentIndex = new Map(); };
-  }, [site]);
+  }, [byPickId]);
 
   // ---- build ---------------------------------------------------------------
   useEffect(() => {

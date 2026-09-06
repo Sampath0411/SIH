@@ -67,6 +67,8 @@ export default function FloorLadder({
               key={f.id}
               type="button"
               title={`${f.ulpin} · ${f.z_min.toFixed(1)}–${f.z_max.toFixed(1)} m`}
+              aria-label={`${levelLabel(f.level_no, top)} (${f.ulpin})`}
+              aria-pressed={active}
               onClick={() => isolateFloor(active ? null : f.level_no)}
               className={[
                 'shrink-0 rounded text-[11px] font-medium transition-colors',
@@ -88,6 +90,7 @@ export default function FloorLadder({
       {isolatedFloor !== null ? (
         <button
           type="button"
+          aria-label="Show all levels"
           onClick={() => isolateFloor(null)}
           className={[
             'shrink-0 rounded bg-[rgb(var(--tint)/0.06)] text-[9px] text-[rgb(var(--muted))] tint-hover',

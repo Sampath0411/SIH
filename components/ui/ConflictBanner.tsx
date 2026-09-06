@@ -28,9 +28,14 @@ export default function ConflictBanner() {
   const lead = ordered[0];
 
   return (
-    <div data-panel="conflict" className="glass pointer-events-auto w-full max-w-[560px] rounded-lg border-danger/60 px-3 py-2">
+    <div
+      data-panel="conflict"
+      role="status"
+      aria-live="polite"
+      className="glass pointer-events-auto w-full max-w-[560px] rounded-lg border-danger/60 px-3 py-2"
+    >
       <div className="flex items-center gap-2">
-        <span className="pulse-conflict inline-block h-2 w-2 shrink-0 rounded-full bg-danger" />
+        <span aria-hidden="true" className="pulse-conflict inline-block h-2 w-2 shrink-0 rounded-full bg-danger" />
         <span className="text-[12px] font-semibold text-dangerInk">
           {conflicts.length} utility/basement conflict
           {conflicts.length > 1 ? 's' : ''} detected
@@ -56,6 +61,7 @@ export default function ConflictBanner() {
           <button
             key={c.id}
             type="button"
+            aria-label={`Select utility ${c.building_ulpin}`}
             onClick={() => selectUtility(c.utility_id)}
             className={[
               'rounded px-1.5 py-0.5 font-mono text-[9px] transition-colors',
