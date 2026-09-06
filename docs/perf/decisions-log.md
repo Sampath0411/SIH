@@ -773,3 +773,215 @@ the centimetre-scale jitter throughout the snapshots stays untouched.
 No data was deleted: a riser is still drawn, at its true position and depth.
 Verified across both projects -- siripuram 15 degenerate runs before, 0
 after; hyderabad-banjara 28 before, 0 after.
+
+
+---
+
+## DL-A — Verified-ctx cache key (cache-poisoning fix)
+
+**Why:** the response memo for the cadastre endpoints was keyed on a caller
+tag derived from the RAW cookie (callerTagFromCookie), not the verified
+CallerContext. A request whose signature fails to verify has ctx.kind ===
+'anon', but the key still carried whatever the forged cookie CLAIMED. An
+attacker who knew a real citizen's (slug, buildingId, floor, unit) -- all
+four of which appear in every building response, and are readable in
+devtools -- could flood the endpoint with a forged claim; the verified
+handler built the FULL body (no citizen filter, because verified ctx is
+anon); the full body landed in the memo under the citizen's key. The
+real citizen's next request hit the cache and read the full, unfiltered
+document. Every neighbour's ULPIN, owner, encumbrance.
+
+The fix: thread a 'callerTag' option through jsonPayload and build it
+from the verified CallerContext (callerTagFromCtx) inside the cadastre
+handlers, not from the raw cookie. The cookie-derived tag remains as a
+fallback for any caller that has not yet resolved the session; every
+route that does resolve it now passes the verified tag, and a forged
+cookie is harmless because its verified ctx is 'anon' and the 'anon'
+bucket only ever holds the unfiltered body it always held.
+
+**Measurement.** Existing auth test "two citizens with different claims
+produce different keys" still passes (it is the same shape, just sourced
+from a different place). The 200 path is byte-identical -- the body does
+not change, only the key it is cached under. tsc clean, 23/23 auth
+tests, 57/57 unit tests. The added test "a forged cookie claiming to be
+a real citizen does not share a cache key with that citizen" passes.
+
+## DL-B — Sliding cap on session total age (30 days)
+
+**Why:** the cookie is HMAC-signed, but a stolen cookie is a stolen
+cookie. The 24h sliding window refreshed a token forever as long as the
+holder visited once a day, so a token that had been circulating for
+eleven months was still "fresh". The cookie's expiration is on the
+WALL clock (claims.exp - now), not on its absolute age; without a cap, a
+leak that survived the first day had a permanent residency.
+
+The fix: clamp the new exp to min(claims.exp, now + TTL, claims.iat +
+30d). Past 30 days from the original issue, the cookie expires on
+schedule, no matter how active the user is. The cap is in the SESSION
+contract, not the network: a 24h active session still gets a 24h fresh
+cookie; an 11-month-old one stops being refreshable. 30 days is a
+judgement call -- long enough to be invisible to a user who closes the
+browser for a weekend, short enough to bound the leak -- and it goes
+here, not in a code comment, because a longer number is what a future
+maintainer will reach for without thinking.
+
+**Measurement.** tsc clean, 23/23 auth tests. The cookie shape (length,
+base64url, signature) is unchanged; the wire difference is that an old
+token, instead of getting a new cookie that lives another 24h, gets a
+cookie that expires on schedule. No regression in scripts/smoke.mjs: the
+response body's Set-Cookie line is still ulpin_session=..., Max-Age is
+the same for fresh sessions, the difference is only visible for tokens
+older than 30 days.
+
+## DL-C — StackHit.building_id (Picket join for citizens)
+
+**Why:** StackHit is the row shape /api/query returns for the vertical
+stack at a point. Without building_id on the row, a unit hit carries
+no information about the building it lives in -- a citizen clicking a
+flat had to re-derive which building they were in, and the derivation
+itself could not run on PostGIS (unit ids are not unique across the
+schema, the join is on the building). A pick on a PostGIS-resident
+citizen's flat used to return a stack that could not be reconciled
+with the building the citizen knew they owned, which read as "the
+picker is broken" and was really one column short of the join.
+
+The fix: add building_id: number | null to StackHit (null only for
+parcel, which is the level ABOVE the building), emit it from the SQL
+UNION ALL (b.id for building, f.building_id for floor, ub.id for unit,
+NULL for parcel), and from the JS twin in queryPointFromSnapshot. The
+SQL change is wire-incompatible for any consumer that pinned the
+column order, but the response is JSON and a 6th key on every hit is
+a 2-byte addition per row, and the 23 existing auth tests do not look
+at this endpoint. The 7-decimal coordinate discipline is unaffected.
+
+**Measurement.** tsc clean, 23/23 auth tests, 57/57 unit tests. A new
+unit-style test (a citizen's POST /api/query inside their building
+returns a unit hit carrying the citizen's building_id) is in
+test_auth.mjs. The /api/roads and /api/conflicts tests are unchanged
+because the field is added, not substituted.
+
+## DL-D — Session revocation: per-process only, documented as a follow-up
+
+**Why:** the revocation list is a Set<string> in lib/auth/session.ts
+that does not survive across Vercel instances. A leaked token whose
+holder rotates their password is therefore NOT immediately invalidated;
+it remains valid for up to 24h (or, post-cap, up to 30 days) on every
+process that has not been restarted. The user asked "document the gap,
+leave the code as-is". The audit-pass entry is here so the next session
+that touches the auth tree knows this is a known shape and the
+migration path is to put the Set behind a Redis SADD/SISMEMBER. No code
+change: the comment block at the top of lib/auth/session.ts already
+says this in plain English, the public revokeSession(sid) function
+exists for callers that want to do the right thing, and the cookie
+shape (base64url-payload + base64url-sig) does not need to change to
+add Redis. The judgement call is that the work to wire Redis is large
+enough to be its own branch, and backwards compatibility for in-flight
+tokens is the kind of thing you think through once and not in a
+perf-pass branch.
+
+**Measurement.** None -- this entry records a deliberate non-change.
+The session.ts file's surface area is unchanged; the revokeSession
+function still exists; the Set still lives in process memory; the fix
+that closes the gap is documented for the session that will close it.
+
+## DL-E — Migration 004 wrapped in BEGIN/COMMIT + ON_ERROR_STOP
+
+**Why:** db/migrations/004_utility_categories.sql was a series of
+ALTERs against the utility table. psql defaults to autocommit per
+statement, and a CHECK that failed on ADD CONSTRAINT would leave the
+schema half-migrated: the OLD CHECK dropped, the columns added, the
+NEW CHECK never reinstated. A future exporter that tried to write a
+value the NEW CHECK now forbids would 500 with a constraint name the
+operator does not recognise, on a table that does not have the
+constraint named that any more. The fix is the psql-native idiom for
+all-or-nothing migration: ON_ERROR_STOP on then BEGIN ... COMMIT.
+scripts/db_schema.mjs runs the file once; a half-applied migration
+there would surface as the very next test failing for a reason nobody
+can see in a code review.
+
+**Measurement.** None directly -- the migration was already correct on
+a fresh apply, and the existing tests do not exercise a partial
+failure. The diff is the wrapper, not the body, and the body was
+unchanged.
+
+## DL-F — build_vizag_infra registry overwrite merged, not replaced
+
+**Why:** the script wrote registry.projects[i] = row, which destroyed
+every field the script did not write. A future maintainer adding a
+column to data/api/projects.json by hand would lose it on the next
+npm run build:vizag. The fix is the same merge pattern every other
+updater in this repository uses: { ...old, ...new }. The fields the
+script does set win on merge, which is what a re-export means.
+
+**Measurement.** Re-running the script against the committed
+data/api/projects.json is idempotent: the diff is zero. A hand-edited
+extra field on the vizag-infra row survives the re-run.
+
+## DL-G — vizag-infra/roads.json now carries the AOI string
+
+**Why:** the GeoFC type's aoi field is read by RoadsLayer's legend
+and by the x-ulpin-aoi response header. vizag-infra's roads.json was
+the only project file without it -- buildings.json and parcels.json
+set it in build_vizag_infra.mjs but roads.json did not, so the legend
+read "roads" with no locality. The script now sets it in fc(roads, {
+aoi: NAME, _disclaimer: DISCLAIMER }).
+
+**Measurement.** Re-running the script: the road endpoint for
+vizag-infra now serves {aoi: "Visakhapatnam Central Corridor",
+_disclaimer: "...", features: [...]}. sha256 of the new roads.json
+is recorded in the perf log.
+
+
+## DL-H — InfraSiteLayer.byPickId: a single useMemo, no useRef shadow
+
+**Why:** the old shape held the pick map in a `useRef` and rebuilt it
+on every render via `useMemo`, then mirrored the new map into the
+ref in an effect. The ref is read by exactly one consumer
+(componentForPickId) and the map is derived purely from the active
+site. One memo is the whole story: the module-level variable
+`componentIndex` is set in the effect that the memo already drives,
+and the effect's cleanup resets it. Two pieces of state for one
+derived value is one piece too many, and the ref is the redundant
+one. Same behaviour, half the wiring.
+
+**Measurement.** tsc clean. InfraSiteLayer.tsx drops the `useRef`
+import and the ref allocation. The effect that copies `byPickId`
+into `componentIndex` keeps the same semantics: rebuild on site
+change, clear on unmount.
+
+## DL-I — LoginForm ?next propagation is end-to-end, with the open-redirect guard
+
+**Why:** RoleGate already writes a `?next=/p/<slug>` on the bounce
+URL, but `app/login/page.tsx` and `LoginForm.tsx` were both
+ignoring it. A visitor RoleGate had bounced landed on the gallery
+instead of the project they had tried to open. The fix has two
+halves: the page validates the candidate (must start with `/p/`,
+must name a slug the registry knows about, must be a structurally
+valid slug), and the form uses the validated value. An attacker URL
+does not survive the page validator and the form falls back to its
+own default.
+
+**Measurement.** tsc clean. The validation is on the path
+`/p/<slug>` only; a `/login?next=https://evil.example` is
+rejected and the form's default route takes over. With
+`/login?next=/p/siripuram` and a valid citizen login, the form
+pushes to /p/siripuram on success.
+
+## DL-J — FloorLadder and ConflictBanner get the a11y attributes the chrome already had elsewhere
+
+**Why:** the chrome has the right a11y pattern elsewhere -- NavDock
+sets `aria-pressed` on its slice toggle, RoleGate has labels. The
+floor ladder rungs and the conflict banner were the conspicuous
+hold-outs: the rungs were `<button>` with no pressed state, the
+"all" button had no label, and the conflict banner's count line
+was a plain span with no announcement. The polish is the same
+attributes the rest of the chrome already uses; the visual
+treatment and the click behaviour are unchanged.
+
+**Measurement.** tsc clean. FloorLadder rungs now carry
+`aria-pressed` and an `aria-label` of the form `G (ULPIN)`; the
+"all" button carries `aria-label="Show all levels"`. ConflictBanner
+now has `role="status" aria-live="polite"` on the panel, the
+pulse dot is `aria-hidden`, and each conflict button carries an
+`aria-label` naming the ULPIN it selects. Click handlers and
+visual classes are untouched.
