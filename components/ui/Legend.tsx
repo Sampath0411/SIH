@@ -2,16 +2,17 @@
 
 import { useState } from 'react';
 import { useDataStore, useViewStore } from '@/lib/store';
+import { RISK_HEX, ROAD_COLOR, ROAD_STYLE } from '@/lib/cesium/materials';
 import {
-  RISK_HEX, ROAD_COLOR, ROAD_STYLE, UTILITY_COLOR, UTILITY_LABEL,
-} from '@/lib/cesium/materials';
+  UNDERGROUND_LAYERS, categoryOfAssetType, type UtilityCategory,
+} from '@/lib/underground/categories';
 import { PROVENANCES } from '@/lib/stats';
 import { buildLegendUrl, LULC_NOTE } from '@/lib/bhuvan';
 import {
   HAZARD_CAVEAT, HAZARD_DRIVERS, HAZARD_LABEL, RISK_MEANING,
 } from '@/lib/hazard';
 import { RISK_ORDER } from '@/lib/types';
-import type { AssetType, RiskClass, RoadClass } from '@/lib/types';
+import type { RiskClass, RoadClass } from '@/lib/types';
 import { ProvenanceBadge } from './Provenance';
 
 /**
@@ -25,13 +26,6 @@ const ROAD_KEY: { cls: RoadClass; label: string }[] = [
   { cls: 'tertiary', label: 'Collector' },
   { cls: 'service', label: 'Service lane' },
 ];
-
-const DEPTHS: Record<AssetType, string> = {
-  power: '-1.0 m',
-  water: '-1.5 m',
-  sewer: '-3.0 m',
-  metro: '-14.0 m',
-};
 
 /**
  * The colour keys: provenance always, utility corridors underground.
@@ -67,10 +61,12 @@ export default function Legend() {
   const [override, setOverride] = useState<boolean | null>(null);
   const provenanceOpen = override ?? mode === 'city';
 
-  const counts = new Map<string, number>();
+  // Counted per DISPLAY category, not per stored asset_type, so the section
+  // below and the underground panel agree about what "Electrical" contains.
+  const counts = new Map<UtilityCategory, number>();
   for (const f of utilities?.features ?? []) {
-    const t = f.properties.asset_type as string;
-    counts.set(t, (counts.get(t) ?? 0) + 1);
+    const cat = categoryOfAssetType(f.properties.asset_type);
+    if (cat) counts.set(cat, (counts.get(cat) ?? 0) + 1);
   }
 
   // Counted, not written down: the mix is a property of the loaded data.
@@ -213,40 +209,109 @@ export default function Legend() {
         </div>
       ) : null}
 
-      {underground ? (
-        <div className="mt-2 border-t border-[rgb(var(--edge))]/50 pt-2">
-          <div className="panel-title">Utility corridors</div>
-          <div className="mt-1.5 space-y-1">
-            {(['water', 'sewer', 'power', 'metro'] as AssetType[]).map((t) => (
-              <div key={t} className="flex items-center gap-2">
-                {/* Ringed: the panel is near-black, and the darkest corridor
-                    tone (sewer brown) would otherwise sit on it with almost no
-                    edge of its own. */}
-                <span
-                  className="h-2 w-4 shrink-0 rounded-full ring-1 ring-[rgb(var(--edge-strong))]"
-                  style={{ background: UTILITY_COLOR[t].toCssColorString() }}
-                />
-                <span className="flex-1 text-[11px] text-[rgb(var(--ink))]">
-                  {UTILITY_LABEL[t]}
-                </span>
-                <span className="font-mono text-[10px] text-[rgb(var(--muted))]">
-                  {DEPTHS[t]}
-                </span>
-                <span className="w-6 text-right font-mono text-[10px] text-[rgb(var(--muted))]">
-                  {counts.get(t) ?? 0}
-                </span>
-              </div>
-            ))}
+      {underground ? <DepthSection counts={counts} /> : null}
+    </div>
+  );
+}
+
+/**
+ * The strata, in section.
+ *
+ * Answers the question the underground mode is for -- what is under this
+ * ground, and in what order -- in the one form a checkbox list cannot: a
+ * vertical scale. Only the categories the user has switched on are drawn, so
+ * it stays a reading of the current scene rather than a catalogue.
+ *
+ * Every number here is read from lib/underground/categories.ts. The depths
+ * used to be a hardcoded map in this file, which had already drifted from the
+ * generator's and from the data's.
+ */
+function DepthSection({ counts }: { counts: Map<UtilityCategory, number> }) {
+  const enabled = useViewStore((s) => s.undergroundLayers);
+  const shown = UNDERGROUND_LAYERS.filter((l) => enabled[l.key]);
+
+  /**
+   * Row positions, in pixels.
+   *
+   * Two things had to be got right and both were wrong. The scale ran to the
+   * deepest BAND FLOOR, so switching foundations on (which reach 12 m) squashed
+   * the five shallow services -- all within 3 m of each other -- into a couple
+   * of pixels. And nothing stopped two rows landing on the same line, so their
+   * labels sat on top of each other, which is the exact defect this panel
+   * exists to avoid elsewhere.
+   *
+   * So the scale runs to the deepest NOMINAL shown, and rows are then pushed
+   * apart to a minimum spacing. The diagram stays a true ordering with roughly
+   * true proportions, and stays readable when two strata are 40 cm apart.
+   */
+  const H = 116;
+  const TOP = 16;
+  const MIN_GAP = 13;
+  const deepest = shown.reduce((d, l) => Math.min(d, l.band.nominal), -3);
+  const rows = shown.map((l) => ({
+    layer: l,
+    y: TOP + (l.band.nominal / deepest) * (H - TOP - 10),
+  }));
+  for (let i = 1; i < rows.length; i++) {
+    rows[i].y = Math.max(rows[i].y, rows[i - 1].y + MIN_GAP);
+  }
+  const height = rows.length ? Math.max(H, rows[rows.length - 1].y + 12) : H;
+
+  return (
+    <div className="mt-2 border-t border-[rgb(var(--edge))]/50 pt-2">
+      <div className="panel-title">Depth section</div>
+
+      {shown.length === 0 ? (
+        <p className="mt-1.5 text-[10px] leading-snug text-[rgb(var(--muted))]">
+          No utility layers selected.
+        </p>
+      ) : (
+        <div className="relative mt-1.5" style={{ height }}>
+          {/* Ground line. */}
+          <div
+            className="absolute inset-x-0 border-t border-[rgb(var(--edge-strong))]"
+            style={{ top: TOP }}
+          />
+          <div
+            className="absolute left-0 text-[9px] uppercase tracking-wide text-[rgb(var(--muted))]"
+            style={{ top: 2 }}
+          >
+            Ground
           </div>
-          <div className="mt-2 flex items-center gap-2 border-t border-[rgb(var(--edge))]/50 pt-2">
-            <span className="pulse-conflict h-2 w-4 shrink-0 rounded-full bg-danger" />
-            <span className="text-[11px] text-dangerInk">Basement conflict</span>
-          </div>
-          <p className="mt-1.5 text-[9px] leading-snug text-[rgb(var(--muted))]">
-            Alignments derived from road centrelines, not as-built utility records.
-          </p>
+
+          {rows.map(({ layer: l, y }) => (
+            <div
+              key={l.key}
+              className="absolute inset-x-0 flex items-center gap-1.5"
+              style={{ top: y }}
+            >
+              <span
+                className="h-[3px] w-5 shrink-0 rounded-full ring-1 ring-[rgb(var(--edge-strong))]"
+                style={{ background: l.colour }}
+              />
+              <span className="flex-1 truncate text-[10px] text-[rgb(var(--ink))]">
+                {l.label}
+              </span>
+              <span className="font-mono text-[9px] text-[rgb(var(--muted))]">
+                {l.band.nominal.toFixed(1)} m
+              </span>
+              <span className="w-5 shrink-0 text-right font-mono text-[9px] text-[rgb(var(--muted))]">
+                {counts.get(l.key) ?? 0}
+              </span>
+            </div>
+          ))}
         </div>
-      ) : null}
+      )}
+
+      <div className="mt-2 flex items-center gap-2 border-t border-[rgb(var(--edge))]/50 pt-2">
+        <span className="pulse-conflict h-2 w-4 shrink-0 rounded-full bg-danger" />
+        <span className="text-[11px] text-dangerInk">Basement conflict</span>
+      </div>
+      <p className="mt-1.5 text-[9px] leading-snug text-[rgb(var(--muted))]">
+        Strata are drawn at their recorded depth below the local ground surface,
+        each in its own corridor so that several can be read at once. Selecting
+        one reports where it really is.
+      </p>
     </div>
   );
 }

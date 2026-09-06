@@ -10,6 +10,10 @@ import type {
   Mode, ParcelInfo, Project, RoadProps, SliceState, UtilityProps,
 } from './types';
 import { fetchLulcAt, type LulcResult } from './bhuvan';
+import type { SiteIndexEntry, SiteSpec } from './infra/types';
+import {
+  UNDERGROUND_DEFAULTS, categoryOfAssetType, type UtilityCategory,
+} from './underground/categories';
 import { ringCentroid } from './geo';
 
 /**
@@ -69,6 +73,28 @@ export interface ViewState {
   selectedUnitId: number | null;
   selectedUtilityId: number | null;
   /**
+   * The infrastructure site the scene is showing, if any.
+   *
+   * NOT part of the building/floor/unit stack, and deliberately not a
+   * `Mode`. A site is a place the camera goes, not a level of the cadastral
+   * hierarchy -- you can be looking at a flyover with a building selected,
+   * and neither fact invalidates the other.
+   *
+   * It is also the LAZY-LOAD GATE. A site's specification is only fetched
+   * once it becomes active, and its geometry only built then, so a project
+   * with several sites costs one of them.
+   */
+  activeSiteId: string | null;
+  /**
+   * The picked component of the active site: a platform, a pillar, a ramp.
+   *
+   * Keyed by the component's own string identifier rather than by a number,
+   * because that identifier -- TTF-P-014 -- is the thing a user is given to
+   * quote. The site id travels with it so the panel never has to guess which
+   * structure a ref belongs to.
+   */
+  selectedComponent: { siteId: string; ref: string } | null;
+  /**
    * The picked street.
    *
    * Kept apart from the building/floor/unit stack because it is not part of
@@ -93,6 +119,20 @@ export interface ViewState {
   transparency: number;              // 0-100, applies to non-active buildings
   theme: 'dark' | 'light';
   underground: boolean;
+  /**
+   * Which underground categories are drawn, within `layers.utilities`.
+   *
+   * A SEPARATE record rather than more LayerKeys, because the two are
+   * different kinds of switch: `layers.utilities` is the master -- is the
+   * buried network in the scene at all -- and this says which strata of it.
+   * Folding them together would make "turn the utilities off" and "turn water
+   * off" the same operation, and would put seven more codes into the URL's
+   * layer string for something the user thinks of as one control.
+   *
+   * A category that has never been true is never BUILT, so this is also the
+   * lazy-loading gate: see components/layers/UtilitiesLayer.tsx.
+   */
+  undergroundLayers: Record<UtilityCategory, boolean>;
   viewMode: '3D' | '2D' | 'Split';
   autoSpin: boolean;
   navMode: 'orbit' | 'pan' | 'zoom';
@@ -150,6 +190,9 @@ export interface ViewState {
    */
   openUnit: (level: number, id: number) => void;
   selectUtility: (id: number | null) => void;
+  /** Open a site, or leave it. Null returns the camera to the AOI. */
+  selectSite: (id: string | null) => void;
+  selectComponent: (siteId: string, ref: string) => void;
   setHovered: (id: number | null) => void;
   /**
    * Every hover target in ONE write, so a mouse move renders once.
@@ -181,6 +224,9 @@ export interface ViewState {
   setTransparency: (t: number) => void;
   toggleTheme: () => void;
   setUnderground: (on: boolean) => void;
+  toggleUndergroundLayer: (key: UtilityCategory) => void;
+  /** Bulk-set, for the URL hydrate and the panel's all-on/all-off. */
+  setUndergroundLayers: (next: Partial<Record<UtilityCategory, boolean>>) => void;
   setViewMode: (m: '3D' | '2D' | 'Split') => void;
   setAutoSpin: (on: boolean) => void;
   setNavMode: (m: 'orbit' | 'pan' | 'zoom') => void;
@@ -219,6 +265,21 @@ const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   bhuvanCyclone: false,
 };
 
+/**
+ * Which underground category a picked run belongs to.
+ *
+ * Reads the data store rather than taking a parameter: the only caller is a
+ * view-store setter, and threading the category through every call site of
+ * toggleUndergroundLayer would put a lookup into six UI components instead of
+ * one place. Null when the data has not loaded or the type is unrecognised,
+ * which both mean "do not touch the selection".
+ */
+function utilityCategoryOf(id: number): UtilityCategory | null {
+  const fc = useDataStore.getState().utilities;
+  const f = fc?.features.find((x) => (x.properties as UtilityProps).id === id);
+  return f ? categoryOfAssetType((f.properties as UtilityProps).asset_type) : null;
+}
+
 export const useViewStore = create<ViewState>((set) => ({
   projectSlug: null,
   project: null,
@@ -228,6 +289,8 @@ export const useViewStore = create<ViewState>((set) => ({
   isolatedFloor: null,
   selectedUnitId: null,
   selectedUtilityId: null,
+  activeSiteId: null,
+  selectedComponent: null,
   selectedRoadId: null,
   hoveredBuildingId: null,
   hoveredRoadId: null,
@@ -238,6 +301,7 @@ export const useViewStore = create<ViewState>((set) => ({
   transparency: 12,
   theme: 'dark',
   underground: false,
+  undergroundLayers: { ...UNDERGROUND_DEFAULTS },
   viewMode: '3D',
   autoSpin: false,
   navMode: 'orbit',
@@ -288,9 +352,33 @@ export const useViewStore = create<ViewState>((set) => ({
     set({ mode: 'unit', isolatedFloor: level, selectedUnitId: id,
           selectedUtilityId: null, selectedRoadId: null }),
 
-  selectUtility: (id) => set({ selectedUtilityId: id, selectedRoadId: null }),
-  selectRoad: (id) => set({ selectedRoadId: id, selectedUtilityId: null }),
-  clearAmbient: () => set({ selectedRoadId: null, selectedUtilityId: null }),
+  selectUtility: (id) =>
+    set({ selectedUtilityId: id, selectedRoadId: null, selectedComponent: null }),
+  selectRoad: (id) =>
+    set({ selectedRoadId: id, selectedUtilityId: null, selectedComponent: null }),
+
+  /**
+   * Leaving a site drops the component selection with it: a card describing
+   * a pillar the scene is no longer showing is a card the user cannot clear
+   * by clicking anything.
+   */
+  selectSite: (id) =>
+    set((st) => ({
+      activeSiteId: id,
+      selectedComponent: id === st.activeSiteId ? st.selectedComponent : null,
+    })),
+
+  selectComponent: (siteId, ref) =>
+    set({
+      selectedComponent: { siteId, ref },
+      // A component is an ambient selection, like a street or a pipe: it
+      // describes what the panel is showing without changing the mode.
+      selectedUtilityId: null,
+      selectedRoadId: null,
+    }),
+
+  clearAmbient: () =>
+    set({ selectedRoadId: null, selectedUtilityId: null, selectedComponent: null }),
   setHovered: (id) => set({ hoveredBuildingId: id }),
   setHover: (buildingId, unitId, roadId) =>
     set({ hoveredBuildingId: buildingId, hoveredUnitId: unitId,
@@ -329,6 +417,29 @@ export const useViewStore = create<ViewState>((set) => ({
       layers: { ...s.layers, utilities: on ? true : s.layers.utilities },
     })),
 
+  toggleUndergroundLayer: (key) =>
+    set((s) => {
+      const wasOn = s.undergroundLayers[key];
+      return {
+        undergroundLayers: { ...s.undergroundLayers, [key]: !wasOn },
+        // Turning a stratum on while the master switch is off would appear to
+        // do nothing -- the same reasoning setUnderground already applies.
+        layers: wasOn ? s.layers : { ...s.layers, utilities: true },
+        // Hiding the stratum the selection lives in would leave a card
+        // describing a pipe that is no longer on screen, and no way to clear
+        // it by clicking. Only that case: a selection in another category is
+        // still visible and stays put.
+        selectedUtilityId:
+          wasOn && s.selectedUtilityId !== null
+            && utilityCategoryOf(s.selectedUtilityId) === key
+            ? null
+            : s.selectedUtilityId,
+      };
+    }),
+
+  setUndergroundLayers: (next) =>
+    set((s) => ({ undergroundLayers: { ...s.undergroundLayers, ...next } })),
+
   setViewMode: (m) => set({ viewMode: m }),
   setAutoSpin: (on) => set({ autoSpin: on }),
   setNavMode: (m) => set({ navMode: m }),
@@ -349,7 +460,25 @@ export const useViewStore = create<ViewState>((set) => ({
   setSunHour: (h) =>
     set({ sunHour: h === null ? null : Math.max(SUN_MIN_HOUR, Math.min(SUN_MAX_HOUR, h)) }),
 
-  hydrate: (patch) => set(patch),
+  /**
+   * Bulk-apply state parsed from the URL.
+   *
+   * NOT a plain `set`. A bulk write can reach states no setter would produce,
+   * and one of them was reachable from a shared link: `?ug=1` restored
+   * underground mode while `layers.utilities` kept its default of false, so
+   * the mode opened with its master switch off and nothing underground was
+   * built. setUnderground couples those two deliberately; a second writer that
+   * does not is how an invariant stops being one.
+   */
+  hydrate: (patch) =>
+    set((s) => {
+      const next = { ...patch };
+      const underground = next.underground ?? s.underground;
+      if (underground && next.layers === undefined && !s.layers.utilities) {
+        next.layers = { ...s.layers, utilities: true };
+      }
+      return next;
+    }),
 
   resetView: () =>
     set((s) => ({
@@ -357,6 +486,8 @@ export const useViewStore = create<ViewState>((set) => ({
       selectedUnitId: null, selectedUtilityId: null, selectedRoadId: null,
       hoveredBuildingId: null, hoveredRoadId: null,
       hoveredUnitId: null, explodeT: 0, underground: false, autoSpin: false,
+      activeSiteId: null, selectedComponent: null,
+      undergroundLayers: { ...UNDERGROUND_DEFAULTS },
       slice: { ...s.slice, enabled: false },
     })),
 }));
@@ -371,6 +502,14 @@ export interface DataState {
   utilities: GeoFC<UtilityProps> | null;
   roads: GeoFC<RoadProps> | null;
   conflicts: ConflictRow[];
+  /**
+   * The project's infrastructure sites, as an index. Null until fetched;
+   * an empty array is the normal answer for a project that has none.
+   */
+  sites: SiteIndexEntry[] | null;
+  /** Full specifications, keyed by site id. Fetched one site at a time. */
+  siteSpecs: Record<string, SiteSpec>;
+  pendingSites: Record<string, true>;
   detail: Record<number, BuildingDetail>;
   /**
    * Ids in the detail cache, least-recently-used first.
@@ -419,6 +558,10 @@ export interface DataState {
   setUtilities: (fc: GeoFC<UtilityProps>) => void;
   setRoads: (fc: GeoFC<RoadProps>) => void;
   setConflicts: (rows: ConflictRow[]) => void;
+  setSites: (rows: SiteIndexEntry[]) => void;
+  putSiteSpec: (id: string, spec: SiteSpec) => void;
+  beginSite: (id: string) => void;
+  endSite: (id: string) => void;
   putDetail: (id: number, d: BuildingDetail) => void;
   /** Mark a cached document as freshly used, so it is not the next evicted. */
   touchDetail: (id: number) => void;
@@ -451,6 +594,9 @@ export const useDataStore = create<DataState>((set) => ({
   utilities: null,
   roads: null,
   conflicts: [],
+  sites: null,
+  siteSpecs: {},
+  pendingSites: {},
   detail: {},
   detailOrder: [],
   pendingDetail: {},
@@ -466,6 +612,27 @@ export const useDataStore = create<DataState>((set) => ({
   setUtilities: (fc) => set({ utilities: fc }),
   setRoads: (fc) => set({ roads: fc }),
   setConflicts: (rows) => set({ conflicts: rows }),
+
+  setSites: (rows) => set({ sites: rows }),
+  /**
+   * Cache a site's specification.
+   *
+   * Unbounded, unlike the building detail cache below, and deliberately: a
+   * project holds a handful of sites, each a few tens of kilobytes, and they
+   * are immutable for the life of the page. An LRU here would evict the one
+   * structure the user is standing in.
+   */
+  putSiteSpec: (id, spec) =>
+    set((s) => ({
+      siteSpecs: { ...s.siteSpecs, [id]: spec },
+      pendingSites: (({ [id]: _drop, ...rest }) => rest)(s.pendingSites),
+    })),
+  beginSite: (id) =>
+    set((s) => ({ pendingSites: { ...s.pendingSites, [id]: true as const } })),
+  endSite: (id) =>
+    set((s) => ({
+      pendingSites: (({ [id]: _drop, ...rest }) => rest)(s.pendingSites),
+    })),
   putDetail: (id, d) =>
     set((s) => {
       // BOUNDED, and least-recently-used.
@@ -847,4 +1014,99 @@ export function useIsDirty(id: number | null): boolean {
   if (id === null) return false;
   const d = drafts[id];
   return Boolean(d && Object.keys(d).length > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Infrastructure sites.
+//
+// Two hooks, and the split between them IS the lazy loading. The index is a
+// few hundred bytes and drives the navigator, so it is fetched once the
+// project is known. A site's specification is the whole structure, so it is
+// fetched only when that site becomes active -- and the layer builds geometry
+// only from what these return, so a project with several sites costs one.
+// ---------------------------------------------------------------------------
+
+/**
+ * The project's site index, fetched once.
+ *
+ * Returns an empty array rather than null on failure: a project with no sites
+ * and a project whose index could not be read look the same to a navigator
+ * that simply has nothing to list, and the alternative is a spinner that never
+ * resolves on every project that has none.
+ */
+export function useSiteIndex(): SiteIndexEntry[] {
+  const slug = useViewStore((s) => s.projectSlug);
+  const sites = useDataStore((s) => s.sites);
+
+  useEffect(() => {
+    if (slug === null || sites !== null) return undefined;
+    const abort = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(`/api/p/${slug}/sites`, { signal: abort.signal });
+        if (!res.ok) {
+          useDataStore.getState().setSites([]);
+          return;
+        }
+        const doc = (await res.json()) as { sites?: SiteIndexEntry[] };
+        useDataStore.getState().setSites(Array.isArray(doc.sites) ? doc.sites : []);
+      } catch (err) {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        useDataStore.getState().setSites([]);
+      }
+    })();
+    return () => abort.abort();
+  }, [slug, sites]);
+
+  return sites ?? [];
+}
+
+/**
+ * One site's specification, fetched on first use and cached.
+ *
+ * Mirrors useEnsureDetail: the pending guard is read imperatively rather than
+ * subscribed to, so registering the fetch does not re-run the effect that
+ * started it, and several components asking for the same site produce one
+ * request. The AbortController matters for the same reason it does there --
+ * clicking between sites faster than the network answers should not leave a
+ * queue of specifications to parse.
+ */
+export function useEnsureSite(id: string | null): SiteSpec | null {
+  const specs = useDataStore((s) => s.siteSpecs);
+  const isCached = useDataStore((s) => id !== null && Boolean(s.siteSpecs[id]));
+  const slug = useViewStore((s) => s.projectSlug);
+
+  useEffect(() => {
+    if (id === null || slug === null || isCached) return undefined;
+    if (useDataStore.getState().pendingSites[id]) return undefined;
+    useDataStore.getState().beginSite(id);
+
+    const abort = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(`/api/p/${slug}/infra/${encodeURIComponent(id)}`, {
+          signal: abort.signal,
+        });
+        if (!res.ok) {
+          useDataStore.getState().endSite(id);
+          return;
+        }
+        useDataStore.getState().putSiteSpec(id, (await res.json()) as SiteSpec);
+      } catch (err) {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        useDataStore.getState().endSite(id);
+      }
+    })();
+    return () => {
+      abort.abort();
+      useDataStore.getState().endSite(id);
+    };
+  }, [id, slug, isCached]);
+
+  return id === null ? null : specs[id] ?? null;
+}
+
+/** True while this site's specification is in flight. Drives the navigator. */
+export function useSitePending(id: string | null): boolean {
+  return useDataStore((s) => (id === null ? false : Boolean(s.pendingSites[id])));
 }

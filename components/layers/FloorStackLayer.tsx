@@ -47,6 +47,19 @@ interface StackState {
    * the same defect the isolated floor's plate exists to avoid.
    */
   plateAll: boolean;
+  /**
+   * Underground mode is on.
+   *
+   * Above-grade slabs are surface detail the mode is not about, and a stack of
+   * them standing over the buried services is exactly the clutter the cutaway
+   * exists to remove. Basements stay: a sewer through a basement is the thing
+   * the user came down here to look at.
+   *
+   * Suppression is DERIVED from the mode rather than written back into
+   * `layers.floors`, so leaving underground restores whatever the user had --
+   * the same discipline BuildingsLayer's fade follows.
+   */
+  underground: boolean;
   /** Bumped whenever the section plane moves; see lib/cesium/section.ts. */
   sliceVersion: number;
   plane: HalfPlane | null;
@@ -59,13 +72,14 @@ export default function FloorStackLayer() {
   const explodeT = useViewStore((s) => s.explodeT);
   const isolatedFloor = useViewStore((s) => s.isolatedFloor);
   const showFloors = useViewStore((s) => s.layers.floors);
+  const underground = useViewStore((s) => s.underground);
   const slice = useViewStore((s) => s.slice);
   const buildings = useDataStore((s) => s.buildings);
   const detail = useEnsureDetail(mode === 'city' ? null : activeBuildingId);
 
   const stateRef = useRef<StackState>({
     explodeT: 0, isolated: null, visible: true, plateAll: false,
-    sliceVersion: 0, plane: null,
+    underground: false, sliceVersion: 0, plane: null,
   });
   const dsRef = useRef<Cesium.CustomDataSource | null>(null);
 
@@ -84,7 +98,8 @@ export default function FloorStackLayer() {
       showFloors && (mode === 'floor' || mode === 'unit'
         || (mode === 'building' && slice.enabled));
     stateRef.current.plateAll = mode === 'building' && slice.enabled;
-  }, [explodeT, isolatedFloor, showFloors, mode, slice.enabled]);
+    stateRef.current.underground = underground;
+  }, [explodeT, isolatedFloor, showFloors, mode, slice.enabled, underground]);
 
   // The section plane is derived from the active footprint, so it is recomputed
   // when the slider moves rather than per frame. Bumping the version is what
@@ -165,6 +180,8 @@ export default function FloorStackLayer() {
           show: new Cesium.CallbackProperty(() => {
             const s = stateRef.current;
             if (!s.visible) return false;
+            // Underground keeps the basements and drops the rest.
+            if (s.underground && !isBasement) return false;
             // Isolate hides every level but the chosen one. A section through
             // the whole building is the exception: nothing is isolated there,
             // and every slab is part of the cut.
@@ -190,7 +207,8 @@ export default function FloorStackLayer() {
           outlineColor: MATERIALS.floorShellOutline,
           shadows: Cesium.ShadowMode.DISABLED,
           show: new Cesium.CallbackProperty(
-            () => stateRef.current.visible && isolated() && shell.survives(),
+            () => stateRef.current.visible && !stateRef.current.underground
+              && isolated() && shell.survives(),
             false,
           ),
         },

@@ -227,6 +227,75 @@ function filterUtilitiesForCitizen(
   };
 }
 
+/**
+ * GET .../sites -> the project's named infrastructure sites, as an index.
+ *
+ * Deliberately not routed through `serve`, which is typed to a GeoJSON
+ * FeatureCollection: a site is a structure, not a feature collection, and
+ * widening that helper to "anything" would lose the type that keeps the five
+ * cadastre endpoints honest.
+ *
+ * No citizen filter. A citizen's responses are narrowed to their own building,
+ * and a railway station is not somebody's building -- it is public
+ * infrastructure, and there is nothing in the index that is theirs to be
+ * excluded from.
+ */
+export async function sitesRoute(slug: string, req: Request) {
+  const gate = await gateProject(slug);
+  if (gate) return gate;
+  const ctx = await callerContext(req);
+  const projectGuard = enforceProjectAccess(ctx, slug);
+  if (projectGuard) return projectGuard;
+  try {
+    const { getSites } = await import('@/lib/db');
+    return await jsonPayload(req, await getSites(slug), {
+      resource: `${slug}:sites`,
+      rev: String(editsRev(slug)),
+      headers: await baseHeaders(slug),
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'failed to load sites', detail: String(err) },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * GET .../infra/:site -> one site's full specification.
+ *
+ * Its own endpoint rather than a field on the index, because this is the
+ * lazy-loading boundary: the index is what the navigator lists, and a whole
+ * station only crosses the wire when somebody opens it.
+ */
+export async function siteSpecRoute(slug: string, siteId: string, req: Request) {
+  const gate = await gateProject(slug);
+  if (gate) return gate;
+  const ctx = await callerContext(req);
+  const projectGuard = enforceProjectAccess(ctx, slug);
+  if (projectGuard) return projectGuard;
+  try {
+    const { getSiteSpec } = await import('@/lib/db');
+    const spec = await getSiteSpec(slug, siteId);
+    if (!spec) {
+      return NextResponse.json(
+        { error: 'site not found', slug, site: siteId },
+        { status: 404 },
+      );
+    }
+    return await jsonPayload(req, spec, {
+      resource: `${slug}:site:${siteId}`,
+      rev: String(editsRev(slug)),
+      headers: await baseHeaders(slug),
+    });
+  } catch (err) {
+    return NextResponse.json(
+      { error: 'failed to load site', detail: String(err) },
+      { status: 500 },
+    );
+  }
+}
+
 /** GET .../conflicts -> utility/basement intersections found by ST_3DIntersects. */
 export async function conflictsRoute(slug: string, req: Request) {
   const gate = await gateProject(slug);

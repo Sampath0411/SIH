@@ -13,6 +13,7 @@ import BuildingModelLayer from '../layers/BuildingModelLayer';
 import FloorStackLayer from '../layers/FloorStackLayer';
 import UnitsLayer from '../layers/UnitsLayer';
 import UtilitiesLayer from '../layers/UtilitiesLayer';
+import InfraSiteLayer from '../layers/InfraSiteLayer';
 import ConflictLayer from '../layers/ConflictLayer';
 import ElevationRuler from '../ui/ElevationRuler';
 import BuildingTooltip from './BuildingTooltip';
@@ -50,6 +51,8 @@ export default function Scene({ project }: { project: Project }) {
       <FloorStackLayer />
       <UnitsLayer />
       <UtilitiesLayer />
+      {/* The active named structure. Builds nothing until a site is opened. */}
+      <InfraSiteLayer />
       <ConflictLayer />
 
       {/* DOM overlays that track the scene rather than the page layout. */}

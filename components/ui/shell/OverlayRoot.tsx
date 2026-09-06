@@ -19,6 +19,8 @@ import PhotorealNotice from '../PhotorealNotice';
 import StatsPanel from '../StatsPanel';
 import StatusBar from '../StatusBar';
 import TopBar from '../TopBar';
+import SiteNavigator from '../SiteNavigator';
+import UndergroundPanel from '../UndergroundPanel';
 
 import Drawer from './Drawer';
 import RightRail from './RightRail';
@@ -61,6 +63,16 @@ export default function OverlayRoot() {
   const statsOpen = useViewStore((s) => s.statsOpen);
   const setStatsOpen = useViewStore((s) => s.setStatsOpen);
   const activeBuildingId = useViewStore((s) => s.activeBuildingId);
+  /**
+   * Underground mode raises its own panel to the top of the left column.
+   *
+   * Four panels do not fit a 210 px column on a laptop, and the column
+   * scrolls -- so with the sites first, switching underground on left every
+   * one of its controls below the fold at the exact moment they became the
+   * only ones that matter. Reordering is not duplication: each panel is
+   * still mounted exactly once, which is what the rule above is about.
+   */
+  const underground = useViewStore((s) => s.underground);
 
   // A selection made on the canvas has to become visible without the user
   // having to go looking for it: on a phone the detail is behind a tab, so
@@ -128,7 +140,13 @@ export default function OverlayRoot() {
               <ParcelInset />
             </div>
           }
-          layers={<LayerPanel />}
+          layers={(
+            <div className="flex flex-col gap-2">
+              <SiteNavigator />
+              <LayerPanel />
+              <UndergroundPanel />
+            </div>
+          )}
           legend={<Legend />}
           stats={<StatsPanel />}
         />
@@ -155,8 +173,21 @@ export default function OverlayRoot() {
             title="Layers and display"
           >
             <div className="flex flex-col gap-2">
-              <LayerPanel />
-              <Legend />
+              {underground ? (
+                <>
+                  <UndergroundPanel />
+                  <Legend />
+                  <SiteNavigator />
+                  <LayerPanel />
+                </>
+              ) : (
+                <>
+                  <SiteNavigator />
+                  <LayerPanel />
+                  <UndergroundPanel />
+                  <Legend />
+                </>
+              )}
             </div>
           </Drawer>
         </div>
@@ -211,8 +242,21 @@ export default function OverlayRoot() {
       </div>
 
       <div className="absolute bottom-[46px] left-3 top-[68px] flex w-[210px] flex-col gap-2 overflow-y-auto">
-        <LayerPanel />
-        <Legend />
+        {underground ? (
+          <>
+            <UndergroundPanel />
+            <Legend />
+            <SiteNavigator />
+            <LayerPanel />
+          </>
+        ) : (
+          <>
+            <SiteNavigator />
+            <LayerPanel />
+            <UndergroundPanel />
+            <Legend />
+          </>
+        )}
       </div>
 
       <div className="absolute left-[228px] top-1/2 -translate-y-1/2">

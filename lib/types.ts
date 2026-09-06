@@ -238,14 +238,51 @@ export interface BuildingDetail {
   units: UnitInfo[];
 }
 
+/**
+ * One underground run, as the utilities endpoint serves it.
+ *
+ * `asset_type` is typed as a string rather than as `AssetType` because the two
+ * have come apart on purpose. `AssetType` mirrors the CHECK constraint on
+ * `utility.asset_type`, which db/migrations/004 widens; the DISPLAY taxonomy
+ * is UtilityCategory in lib/underground/categories.ts, and
+ * `categoryOfAssetType` is the one mapping between them. Typing this field as
+ * the narrow union would make every consumer cast, which is exactly what the
+ * call sites used to do.
+ *
+ * Everything below `in_conflict` is OPTIONAL and is rendered only when the
+ * record carries it. That is the data-integrity rule in the type system: a
+ * pipe whose material was never surveyed shows no material row, rather than a
+ * plausible one.
+ */
 export interface UtilityProps {
   id: number;
-  asset_type: AssetType;
+  asset_type: string;
   depth_m: number;
   radius_m: number;
   authority: string;
   status: string;
   in_conflict: boolean;
+  /** Set on a run that belongs to one building rather than to a street. */
+  building_id?: number;
+  /** Display identifier, e.g. "VSKP-WTR-004". Falls back to `#id`. */
+  ref?: string;
+  /** Nominal bore, millimetres. Not derivable from radius_m, which is the
+   *  corridor buffer used for the 3D conflict test, not the pipe. */
+  diameter_mm?: number;
+  material?: string;
+  /** What the run serves, in words. */
+  connected_area?: string;
+  /** ISO yyyy-mm-dd. */
+  installed_on?: string;
+  /**
+   * How this record came to exist.
+   *
+   * 'demonstration' is not a hedge, it is a statement: no utility survey was
+   * consulted, and the DetailPanel says so on the face of the card. A record
+   * with no provenance is treated as 'estimated', which is what the
+   * road-centreline offsets the pipeline generates actually are.
+   */
+  provenance?: 'demonstration' | 'estimated' | 'surveyed';
 }
 
 export interface ConflictRow {
@@ -398,7 +435,20 @@ export type RoadClass =
  * CHECK constraint in db/01_schema.sql and must not be widened to describe
  * something the database has no column for.
  */
-export type RoadNameSource = 'osm_name' | 'derived';
+export type RoadNameSource =
+  | 'osm_name'
+  /** Named by scripts/build_roads.mjs, anchored to a street OSM did name. */
+  | 'derived'
+  /**
+   * Named by a cited published source rather than by a mapper or by us.
+   *
+   * Added for the infrastructure sites, whose two arterials are named in the
+   * reference the site spec cites. Neither of the other two values would be
+   * true of them: nobody mapped these in OSM, and "derived" means we invented
+   * the name -- which for Dondaparthi Road would be a plain falsehood, and the
+   * exact confusion this field exists to prevent.
+   */
+  | 'reference';
 
 export interface RoadProps {
   /** Stable 1..N, frozen in data/api/roads.json. Numeric because EntityTag.id is. */

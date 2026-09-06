@@ -1,6 +1,9 @@
 import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
-import type { AssetType, Provenance, RiskClass, RoadClass, UseType } from '@/lib/types';
+import type { Provenance, RiskClass, RoadClass, UseType } from '@/lib/types';
+import {
+  UNDERGROUND_LAYERS, categoryOfAssetType, type UtilityCategory,
+} from '@/lib/underground/categories';
 
 /**
  * Every colour state in the scene, defined once.
@@ -399,28 +402,102 @@ export const ROAD_PICK_PX = 13;
 
 // ---------------------------------------------------------------- utilities
 /**
- * Utility corridors, one hue per asset type.
+ * Underground corridors, one hue per category.
  *
- * These are tubes several metres underground seen through a translucent globe,
- * often crossing each other in a single view, and they are the one layer where
- * four categories are on screen at once with no room to label each. Hue is the
- * encoding that survives that; the Legend still states the type and the depth
- * in words beside every swatch. Kept clear of the built-form green so a duct
- * never reads as part of a basement, and clear of CONFLICT_COLOR's red.
+ * These are tubes several metres down seen through a translucent globe, often
+ * crossing each other in a single view, and it is the one layer where several
+ * networks can be on screen at once with no room to label each. Hue is the
+ * encoding that survives that; the panel and the legend state the category and
+ * its depth in words beside every swatch. Kept clear of the built-form
+ * off-white so a duct never reads as part of a basement, and clear of
+ * CONFLICT_COLOR's red.
+ *
+ * The hues themselves live in lib/underground/categories.ts, with the depths
+ * and corridors they belong to. This module is still the only place that
+ * constructs a Cesium.Color -- it is where the hex becomes a colour, not where
+ * the hex is decided. Splitting it that way is what lets the layer panel,
+ * which is prerendered and must not touch Cesium, read the same swatch values.
  */
-export const UTILITY_COLOR: Record<AssetType, Cesium.Color> = {
-  power: Cesium.Color.fromCssColorString('#FACC15'),   // amber
-  water: Cesium.Color.fromCssColorString('#38BDF8'),   // blue
-  sewer: Cesium.Color.fromCssColorString('#B45309'),   // brown
-  metro: Cesium.Color.fromCssColorString('#C084FC'),   // violet
+export const UTILITY_COLOR: Record<UtilityCategory, Cesium.Color> =
+  Object.fromEntries(
+    UNDERGROUND_LAYERS.map((l) => [l.key, Cesium.Color.fromCssColorString(l.colour)]),
+  ) as Record<UtilityCategory, Cesium.Color>;
+
+/** The network's name, for the layer panel and the legend. */
+export const UTILITY_LABEL: Record<UtilityCategory, string> =
+  Object.fromEntries(
+    UNDERGROUND_LAYERS.map((l) => [l.key, l.label]),
+  ) as Record<UtilityCategory, string>;
+
+/** One asset's name, for the detail card and the conflict banner. */
+export const UTILITY_ASSET_LABEL: Record<UtilityCategory, string> =
+  Object.fromEntries(
+    UNDERGROUND_LAYERS.map((l) => [l.key, l.assetLabel]),
+  ) as Record<UtilityCategory, string>;
+
+/**
+ * Name one asset, given whatever `asset_type` the data carries.
+ *
+ * Falls back to the raw stored value for a type this build has no category
+ * for. Naming an unknown duct after the nearest category would be inventing a
+ * fact about it; showing the string the record actually holds is not.
+ */
+export function utilityAssetLabel(assetType: string): string {
+  const cat = categoryOfAssetType(assetType);
+  return cat ? UTILITY_ASSET_LABEL[cat] : assetType;
+}
+
+// ---------------------------------------------------------- infrastructure
+/**
+ * Named infrastructure: the station, the flyover, and their parts.
+ *
+ * NEUTRAL GREYS, on purpose, and the same family the buildings are drawn from.
+ * These structures are the built form of this scene -- they are not a category
+ * competing for attention, and hue here would fight the one place hue is
+ * carrying meaning, which is the buried networks below them. What separates a
+ * platform from a deck from a pier is VALUE: paving is light, structure is
+ * mid, running surfaces are dark. That reads at every zoom and survives a
+ * colour-blind viewer, which a palette of six tints would not.
+ *
+ * Selection is the exception, and gets the same white the rest of the scene
+ * uses for "this is the thing you picked".
+ */
+export const INFRA_COLOR: Record<string, Cesium.Color> = {
+  // Enclosed built form: the same off-white as a building, because that is
+  // what it is.
+  station_building: grey(OFF_WHITE, 0.92),
+  concourse: grey(236, 0.9),
+  entrance: grey(232, 0.94),
+
+  // Paving and decks.
+  platform: grey(198, 0.95),
+  foot_over_bridge: grey(214, 0.95),
+  deck_span: grey(196, 0.97),
+  ramp: grey(190, 0.97),
+  pier_cap: grey(168, 0.98),
+  pillar: grey(158, 0.98),
+  barrier: grey(220, 0.95),
+
+  // A canopy is a roof, so it is nearly opaque. At 0.4 it read as haze AND
+  // sorted badly against the platform four metres under it, which showed up as
+  // bright blotches where two translucent surfaces disagreed about order.
+  platform_shelter: grey(238, 0.82),
+
+  // Running surfaces: the darkest tones on the structure.
+  track: grey(86, 0.95),
+  road: grey(70, 0.9),
+  junction: grey(78, 0.9),
+  parking: grey(92, 0.85),
 };
 
-export const UTILITY_LABEL: Record<AssetType, string> = {
-  water: 'Water main',
-  sewer: 'Sewer',
-  power: 'Power duct',
-  metro: 'Metro tunnel',
-};
+/** Fallback for a component kind with no tone of its own. */
+export const INFRA_DEFAULT = grey(190, 0.92);
+
+/** The component the user has picked. Same white as every other selection. */
+export const INFRA_SELECTED = grey(255, 0.97);
+
+/** Outline of the picked component, so it reads at a distance. */
+export const INFRA_SELECTED_OUTLINE = grey(255);
 
 /** A utility corridor the user has picked. */
 export const UTILITY_SELECTED = Cesium.Color.WHITE.withAlpha(0.95);

@@ -1,8 +1,7 @@
 'use client';
 
 import { useDataStore, useViewStore } from '@/lib/store';
-import { UTILITY_LABEL } from '@/lib/cesium/materials';
-import type { AssetType } from '@/lib/types';
+import { utilityAssetLabel } from '@/lib/cesium/materials';
 
 /**
  * Names the conflicts found by ST_3DIntersects while underground mode is on.
@@ -42,7 +41,7 @@ export default function ConflictBanner() {
       </div>
 
       <p className="mt-1 text-[11px] leading-snug text-[rgb(var(--ink))]">
-        {UTILITY_LABEL[lead.asset_type as AssetType]} #{lead.utility_id} (
+        {utilityAssetLabel(lead.asset_type)} #{lead.utility_id} (
         {lead.authority}) at {lead.depth_m.toFixed(1)} m passes through basement
         level {lead.level_no} of{' '}
         <span className="font-mono">{lead.building_ulpin}</span>

@@ -1,0 +1,1171 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 942001,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942001,
+        "ref": "TTF-WAT-001",
+        "asset_type": "water",
+        "depth_m": -1.8,
+        "radius_m": 0.25,
+        "diameter_mm": 300,
+        "material": "Ductile iron",
+        "authority": "GVMC Water Supply",
+        "connected_area": "Telugu Thalli Flyover",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942002,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942002,
+        "ref": "TTF-SEW-002",
+        "asset_type": "sewer",
+        "depth_m": -3.2,
+        "radius_m": 0.35,
+        "diameter_mm": 450,
+        "material": "RCC NP3",
+        "authority": "GVMC Sewerage Board",
+        "connected_area": "Telugu Thalli Flyover",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942003,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942003,
+        "ref": "TTF-ELE-003",
+        "asset_type": "power",
+        "depth_m": -1.2,
+        "radius_m": 0.2,
+        "diameter_mm": 160,
+        "material": "HDPE duct bank",
+        "authority": "APEPDCL",
+        "connected_area": "Telugu Thalli Flyover",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942004,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942004,
+        "ref": "TTF-TEL-004",
+        "asset_type": "telecom",
+        "depth_m": -0.7,
+        "radius_m": 0.15,
+        "diameter_mm": 110,
+        "material": "HDPE microduct",
+        "authority": "BSNL",
+        "connected_area": "Telugu Thalli Flyover",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942005,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942005,
+        "ref": "TTF-DRA-005",
+        "asset_type": "drainage",
+        "depth_m": -2.4,
+        "radius_m": 0.6,
+        "diameter_mm": 900,
+        "material": "RCC box culvert",
+        "authority": "GVMC Storm Water Drainage",
+        "connected_area": "Telugu Thalli Flyover",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942006,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942006,
+        "ref": "VSKP-WAT-006",
+        "asset_type": "water",
+        "depth_m": -1.8,
+        "radius_m": 0.25,
+        "diameter_mm": 300,
+        "material": "Ductile iron",
+        "authority": "GVMC Water Supply",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942007,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2865621,
+            17.7246227
+          ],
+          [
+            83.2880556,
+            17.7212303
+          ],
+          [
+            83.289338,
+            17.7177596
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942007,
+        "ref": "VSKP-WAT-007",
+        "asset_type": "water",
+        "depth_m": -1.8,
+        "radius_m": 0.25,
+        "diameter_mm": 300,
+        "material": "Ductile iron",
+        "authority": "GVMC Water Supply",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942008,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942008,
+        "ref": "VSKP-SEW-008",
+        "asset_type": "sewer",
+        "depth_m": -3.2,
+        "radius_m": 0.35,
+        "diameter_mm": 450,
+        "material": "RCC NP3",
+        "authority": "GVMC Sewerage Board",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942009,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2865621,
+            17.7246227
+          ],
+          [
+            83.2880556,
+            17.7212303
+          ],
+          [
+            83.289338,
+            17.7177596
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942009,
+        "ref": "VSKP-SEW-009",
+        "asset_type": "sewer",
+        "depth_m": -3.2,
+        "radius_m": 0.35,
+        "diameter_mm": 450,
+        "material": "RCC NP3",
+        "authority": "GVMC Sewerage Board",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942010,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942010,
+        "ref": "VSKP-ELE-010",
+        "asset_type": "power",
+        "depth_m": -1.2,
+        "radius_m": 0.2,
+        "diameter_mm": 160,
+        "material": "HDPE duct bank",
+        "authority": "APEPDCL",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942011,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2865621,
+            17.7246227
+          ],
+          [
+            83.2880556,
+            17.7212303
+          ],
+          [
+            83.289338,
+            17.7177596
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942011,
+        "ref": "VSKP-ELE-011",
+        "asset_type": "power",
+        "depth_m": -1.2,
+        "radius_m": 0.2,
+        "diameter_mm": 160,
+        "material": "HDPE duct bank",
+        "authority": "APEPDCL",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942012,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942012,
+        "ref": "VSKP-TEL-012",
+        "asset_type": "telecom",
+        "depth_m": -0.7,
+        "radius_m": 0.15,
+        "diameter_mm": 110,
+        "material": "HDPE microduct",
+        "authority": "BSNL",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942013,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2865621,
+            17.7246227
+          ],
+          [
+            83.2880556,
+            17.7212303
+          ],
+          [
+            83.289338,
+            17.7177596
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942013,
+        "ref": "VSKP-TEL-013",
+        "asset_type": "telecom",
+        "depth_m": -0.7,
+        "radius_m": 0.15,
+        "diameter_mm": 110,
+        "material": "HDPE microduct",
+        "authority": "BSNL",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942014,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2965472,
+            17.7247146
+          ],
+          [
+            83.2978782,
+            17.7251969
+          ],
+          [
+            83.2982045,
+            17.7252952
+          ],
+          [
+            83.2984317,
+            17.7253385
+          ],
+          [
+            83.2986966,
+            17.7253507
+          ],
+          [
+            83.2989922,
+            17.7253324
+          ],
+          [
+            83.2997364,
+            17.7252502
+          ],
+          [
+            83.3005402,
+            17.7251706
+          ],
+          [
+            83.3014987,
+            17.7251083
+          ],
+          [
+            83.3024611,
+            17.7250234
+          ],
+          [
+            83.302892,
+            17.7249873
+          ],
+          [
+            83.3035211,
+            17.724941
+          ],
+          [
+            83.3050338,
+            17.7248209
+          ],
+          [
+            83.3062824,
+            17.724723
+          ],
+          [
+            83.3078534,
+            17.7245982
+          ],
+          [
+            83.3086419,
+            17.7245458
+          ],
+          [
+            83.3091682,
+            17.7244993
+          ],
+          [
+            83.3095692,
+            17.7244483
+          ],
+          [
+            83.310066,
+            17.7243646
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942014,
+        "ref": "VSKP-DRA-014",
+        "asset_type": "drainage",
+        "depth_m": -2.4,
+        "radius_m": 0.6,
+        "diameter_mm": 900,
+        "material": "RCC box culvert",
+        "authority": "GVMC Storm Water Drainage",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 942015,
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            83.2865621,
+            17.7246227
+          ],
+          [
+            83.2880556,
+            17.7212303
+          ],
+          [
+            83.289338,
+            17.7177596
+          ]
+        ]
+      },
+      "properties": {
+        "id": 942015,
+        "ref": "VSKP-DRA-015",
+        "asset_type": "drainage",
+        "depth_m": -2.4,
+        "radius_m": 0.6,
+        "diameter_mm": 900,
+        "material": "RCC box culvert",
+        "authority": "GVMC Storm Water Drainage",
+        "connected_area": "Visakhapatnam Railway Station",
+        "status": "operational",
+        "in_conflict": false,
+        "provenance": "demonstration"
+      }
+    }
+  ],
+  "_disclaimer": "DEMONSTRATION DATA. No utility survey was consulted. Alignments follow the derived street centrelines; depths are the nominal band for each category in lib/underground/categories.ts."
+}

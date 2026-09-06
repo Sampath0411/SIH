@@ -95,6 +95,7 @@ export default function UnitsLayer() {
   const hoveredUnitId = useViewStore((s) => s.hoveredUnitId);
   const explodeT = useViewStore((s) => s.explodeT);
   const showFloors = useViewStore((s) => s.layers.floors);
+  const underground = useViewStore((s) => s.underground);
   const slice = useViewStore((s) => s.slice);
   const buildings = useDataStore((s) => s.buildings);
   const detail = useEnsureDetail(mode === 'city' ? null : activeBuildingId);
@@ -120,9 +121,16 @@ export default function UnitsLayer() {
     s.anySelected = selectedUnitId !== null;
     s.explodeT = explodeT;
     s.sliced = slice.enabled;
-    s.fadeTarget = opacityFor(mode, isolatedFloor, explodeT, slice.enabled, showFloors);
+    // Flats are the interior of one storey of one building. Underground
+    // they are pure clutter standing over the thing being inspected, so
+    // the fade target goes to zero -- derived from the mode, never written
+    // back into layers.floors, so leaving the mode restores what the user
+    // had.
+    s.fadeTarget = underground
+      ? 0
+      : opacityFor(mode, isolatedFloor, explodeT, slice.enabled, showFloors);
   }, [mode, isolatedFloor, selectedUnitId, hoveredUnitId, explodeT,
-      slice.enabled, showFloors]);
+      slice.enabled, showFloors, underground]);
 
   // The section plane comes from the active footprint, so the flats are cut by
   // exactly the plane the floor plate and shell are cut by.

@@ -57,6 +57,33 @@
         "conflicts": 80,
         "utilities": 1214
       }
+    },
+    {
+      "slug": "vizag-infra",
+      "name": "Visakhapatnam Central Corridor",
+      "bbox": [
+        83.2849,
+        17.71614,
+        83.31168,
+        17.72705
+      ],
+      "state_code": "AP",
+      "district_code": "VSP",
+      "scheme_code": "3D26",
+      "status": "ready",
+      "elev_source": "placeholder",
+      "elev_datum": null,
+      "bhuvan_layers": null,
+      "created_at": "2026-09-06T00:00:00.000Z",
+      "stats": {
+        "units": 0,
+        "floors": 0,
+        "parcels": 2,
+        "streets": 2,
+        "buildings": 2,
+        "conflicts": 0,
+        "utilities": 15
+      }
     }
   ]
 }

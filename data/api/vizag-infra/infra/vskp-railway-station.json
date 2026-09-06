@@ -1,0 +1,750 @@
+{
+  "id": "vskp-railway-station",
+  "name": "Visakhapatnam Railway Station",
+  "kind": "railway_station",
+  "anchor": {
+    "lon": 83.2897309,
+    "lat": 17.721693
+  },
+  "bearing": 158.8,
+  "summary": "South Coast Railway zone terminus at Gnanapuram — 8 platforms, 10 tracks.",
+  "facts": [
+    {
+      "label": "Station code",
+      "value": "VSKP",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Platforms",
+      "value": 8,
+      "source": "wikipedia"
+    },
+    {
+      "label": "Tracks",
+      "value": 10,
+      "source": "wikipedia"
+    },
+    {
+      "label": "Station area",
+      "value": "103,178 m²",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Elevation",
+      "value": "5.97 m",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Opened",
+      "value": "7 October 1896",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Rebuilt",
+      "value": 2017,
+      "source": "wikipedia"
+    },
+    {
+      "label": "Zone",
+      "value": "South Coast Railway",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Division",
+      "value": "Visakhapatnam",
+      "source": "wikipedia"
+    },
+    {
+      "label": "Station point",
+      "value": "17.721431° N, 83.290622° E",
+      "source": "osm_geometry"
+    },
+    {
+      "label": "Platform bodies",
+      "value": "5 (8, 6&7, 4&5, 2&3, 1)",
+      "source": "osm_geometry"
+    },
+    {
+      "label": "Platform alignment",
+      "value": "158.8°",
+      "source": "osm_geometry"
+    }
+  ],
+  "derivedNote": "The platform outlines, their numbering and the station point are MAPPED — they come from OpenStreetMap (© OpenStreetMap contributors, ODbL), and the platform count, area, elevation and dates are published figures. Everything else is DERIVED for this demonstration: the shelters, the foot over bridges, the track positions, the station building and the parking are a plausible arrangement anchored to the measured platform axis, not a station drawing or a survey.",
+  "components": [
+    {
+      "ref": "VSKP-PF-8",
+      "kind": "platform",
+      "shape": "box",
+      "label": "Platform 8",
+      "lod": "far",
+      "geoRing": [
+        [
+          83.2883205,
+          17.7243274
+        ],
+        [
+          83.2883661,
+          17.7243376
+        ],
+        [
+          83.288476,
+          17.7238956
+        ],
+        [
+          83.2886799,
+          17.7233668
+        ],
+        [
+          83.2900693,
+          17.7198921
+        ],
+        [
+          83.290206,
+          17.7196493
+        ],
+        [
+          83.2903697,
+          17.7194092
+        ],
+        [
+          83.2907264,
+          17.7188956
+        ],
+        [
+          83.2906352,
+          17.7188241
+        ],
+        [
+          83.2902141,
+          17.7194322
+        ],
+        [
+          83.2900988,
+          17.7196136
+        ],
+        [
+          83.2899512,
+          17.719864
+        ],
+        [
+          83.2898547,
+          17.7200607
+        ],
+        [
+          83.2898037,
+          17.7200377
+        ],
+        [
+          83.2894042,
+          17.7210032
+        ],
+        [
+          83.2893045,
+          17.721244
+        ],
+        [
+          83.2892941,
+          17.7212692
+        ],
+        [
+          83.2893799,
+          17.7213024
+        ],
+        [
+          83.2885806,
+          17.7233336
+        ],
+        [
+          83.2883607,
+          17.7238803
+        ],
+        [
+          83.2883258,
+          17.7240362
+        ],
+        [
+          83.2883205,
+          17.7243274
+        ]
+      ],
+      "base": 0,
+      "height": 0.9,
+      "meta": {
+        "Platform numbers": "8",
+        "Length": "656 m",
+        "Width": "46.7 m",
+        "Geometry": "OpenStreetMap"
+      }
+    },
+    {
+      "ref": "VSKP-PF-67",
+      "kind": "platform",
+      "shape": "box",
+      "label": "Platform 6&7",
+      "lod": "far",
+      "geoRing": [
+        [
+          83.290493,
+          17.719422
+        ],
+        [
+          83.2905373,
+          17.7194501
+        ],
+        [
+          83.2903925,
+          17.7197081
+        ],
+        [
+          83.2902825,
+          17.7198985
+        ],
+        [
+          83.2901216,
+          17.720274
+        ],
+        [
+          83.2888059,
+          17.7235609
+        ],
+        [
+          83.2886691,
+          17.7239416
+        ],
+        [
+          83.2885619,
+          17.7242738
+        ],
+        [
+          83.2885176,
+          17.7244054
+        ],
+        [
+          83.2884412,
+          17.7243875
+        ],
+        [
+          83.2885163,
+          17.7241128
+        ],
+        [
+          83.2885806,
+          17.7238982
+        ],
+        [
+          83.2887201,
+          17.7235175
+        ],
+        [
+          83.2900424,
+          17.7202447
+        ],
+        [
+          83.2901873,
+          17.7199202
+        ],
+        [
+          83.2902382,
+          17.7198256
+        ],
+        [
+          83.2903455,
+          17.7196468
+        ],
+        [
+          83.290493,
+          17.719422
+        ]
+      ],
+      "base": 0,
+      "height": 0.9,
+      "meta": {
+        "Platform numbers": "6&7",
+        "Length": "591 m",
+        "Width": "17.2 m",
+        "Geometry": "OpenStreetMap"
+      }
+    },
+    {
+      "ref": "VSKP-PF-45",
+      "kind": "platform",
+      "shape": "box",
+      "label": "Platform 4&5",
+      "lod": "far",
+      "geoRing": [
+        [
+          83.2906781,
+          17.7193824
+        ],
+        [
+          83.2907653,
+          17.7194156
+        ],
+        [
+          83.288594,
+          17.724795
+        ],
+        [
+          83.288535,
+          17.7247745
+        ],
+        [
+          83.2886329,
+          17.7244603
+        ],
+        [
+          83.2887094,
+          17.7242648
+        ],
+        [
+          83.2906781,
+          17.7193824
+        ]
+      ],
+      "base": 0,
+      "height": 0.9,
+      "meta": {
+        "Platform numbers": "4&5",
+        "Length": "638 m",
+        "Width": "10.4 m",
+        "Geometry": "OpenStreetMap"
+      }
+    },
+    {
+      "ref": "VSKP-PF-23",
+      "kind": "platform",
+      "shape": "box",
+      "label": "Platform 2&3",
+      "lod": "far",
+      "geoRing": [
+        [
+          83.2906486,
+          17.7199304
+        ],
+        [
+          83.2906848,
+          17.7199406
+        ],
+        [
+          83.2905816,
+          17.7202791
+        ],
+        [
+          83.2904568,
+          17.7206228
+        ],
+        [
+          83.2889119,
+          17.7244066
+        ],
+        [
+          83.2887831,
+          17.7246595
+        ],
+        [
+          83.2887496,
+          17.7246442
+        ],
+        [
+          83.2903858,
+          17.7205742
+        ],
+        [
+          83.2906486,
+          17.7199304
+        ]
+      ],
+      "base": 0,
+      "height": 0.9,
+      "meta": {
+        "Platform numbers": "2&3",
+        "Length": "559 m",
+        "Width": "9.0 m",
+        "Geometry": "OpenStreetMap"
+      }
+    },
+    {
+      "ref": "VSKP-PF-1",
+      "kind": "platform",
+      "shape": "box",
+      "label": "Platform 1",
+      "lod": "far",
+      "geoRing": [
+        [
+          83.2909852,
+          17.7195727
+        ],
+        [
+          83.2909209,
+          17.7195561
+        ],
+        [
+          83.2907546,
+          17.7201603
+        ],
+        [
+          83.2906178,
+          17.7205474
+        ],
+        [
+          83.2892914,
+          17.7238445
+        ],
+        [
+          83.2892056,
+          17.724063
+        ],
+        [
+          83.2891144,
+          17.7242699
+        ],
+        [
+          83.2891479,
+          17.7242878
+        ],
+        [
+          83.2892793,
+          17.7240758
+        ],
+        [
+          83.2893799,
+          17.7238522
+        ],
+        [
+          83.2895677,
+          17.7233719
+        ],
+        [
+          83.28962,
+          17.7233859
+        ],
+        [
+          83.2897688,
+          17.7230219
+        ],
+        [
+          83.2906272,
+          17.7208936
+        ],
+        [
+          83.2907063,
+          17.7206815
+        ],
+        [
+          83.2907411,
+          17.7206943
+        ],
+        [
+          83.2908136,
+          17.7205053
+        ],
+        [
+          83.2908846,
+          17.7202613
+        ],
+        [
+          83.2909007,
+          17.7201948
+        ],
+        [
+          83.2908323,
+          17.7201757
+        ],
+        [
+          83.2909852,
+          17.7195727
+        ]
+      ],
+      "base": 0,
+      "height": 0.9,
+      "meta": {
+        "Platform numbers": "1",
+        "Length": "557 m",
+        "Width": "27.7 m",
+        "Geometry": "OpenStreetMap"
+      }
+    },
+    {
+      "ref": "VSKP-SHL-8",
+      "kind": "platform_shelter",
+      "shape": "box",
+      "label": "Platform 8 shelter",
+      "lod": "mid",
+      "x": 36.77761867565488,
+      "y": 2.389454240188911,
+      "w": 44.29490094611112,
+      "d": 406.78084327676,
+      "base": 5.6,
+      "height": 0.45,
+      "meta": {
+        "Covered length": "407 m",
+        "Clear height": "5.6 m"
+      }
+    },
+    {
+      "ref": "VSKP-SHL-67",
+      "kind": "platform_shelter",
+      "shape": "box",
+      "label": "Platform 6&7 shelter",
+      "lod": "mid",
+      "x": 18.531930761623364,
+      "y": -31.939923839932817,
+      "w": 14.755815097609874,
+      "d": 366.15645665138874,
+      "base": 5.6,
+      "height": 0.45,
+      "meta": {
+        "Covered length": "366 m",
+        "Clear height": "5.6 m"
+      }
+    },
+    {
+      "ref": "VSKP-SHL-45",
+      "kind": "platform_shelter",
+      "shape": "box",
+      "label": "Platform 4&5 shelter",
+      "lod": "mid",
+      "x": -6.447530553472831,
+      "y": -44.49998595793602,
+      "w": 7.977314677235858,
+      "d": 395.5938629996557,
+      "base": 5.6,
+      "height": 0.45,
+      "meta": {
+        "Covered length": "396 m",
+        "Clear height": "5.6 m"
+      }
+    },
+    {
+      "ref": "VSKP-SHL-23",
+      "kind": "platform_shelter",
+      "shape": "box",
+      "label": "Platform 2&3 shelter",
+      "lod": "mid",
+      "x": -24.495291100853773,
+      "y": -62.460180127585716,
+      "w": 6.81144295772492,
+      "d": 346.82624615469564,
+      "base": 5.6,
+      "height": 0.45,
+      "meta": {
+        "Covered length": "347 m",
+        "Clear height": "5.6 m"
+      }
+    },
+    {
+      "ref": "VSKP-SHL-1",
+      "kind": "platform_shelter",
+      "shape": "box",
+      "label": "Platform 1 shelter",
+      "lod": "mid",
+      "x": -46.074823902717704,
+      "y": -11.583861456736088,
+      "w": 25.334072745127877,
+      "d": 345.0523899678579,
+      "base": 5.6,
+      "height": 0.45,
+      "meta": {
+        "Covered length": "345 m",
+        "Clear height": "5.6 m"
+      }
+    },
+    {
+      "ref": "VSKP-TRK-01",
+      "kind": "track",
+      "shape": "box",
+      "label": "Railway track",
+      "lod": "mid",
+      "x": 4.347574998981763,
+      "y": -16.54438671487989,
+      "w": 3.4,
+      "d": 693.9658162274925,
+      "base": -0.25,
+      "height": 0.35,
+      "meta": {
+        "Gauge": "Broad gauge",
+        "Electrified": "Yes"
+      }
+    },
+    {
+      "ref": "VSKP-TRK-02",
+      "kind": "track",
+      "shape": "box",
+      "label": "Railway track",
+      "lod": "mid",
+      "x": -15.825133260378543,
+      "y": -16.54438671487989,
+      "w": 3.4,
+      "d": 693.9658162274925,
+      "base": -0.25,
+      "height": 0.35,
+      "meta": {
+        "Gauge": "Broad gauge",
+        "Electrified": "Yes"
+      }
+    },
+    {
+      "ref": "VSKP-FOB-01",
+      "kind": "foot_over_bridge",
+      "shape": "box",
+      "label": "Foot over bridge",
+      "lod": "far",
+      "x": 0.09160443671439822,
+      "y": -210.85481525857776,
+      "w": 150.06692942399206,
+      "d": 6,
+      "base": 8.6,
+      "height": 0.7,
+      "meta": {
+        "Span": "150 m",
+        "Deck height": "8.6 m",
+        "Crosses": "All platforms"
+      }
+    },
+    {
+      "ref": "VSKP-FOB-02",
+      "kind": "foot_over_bridge",
+      "shape": "box",
+      "label": "Foot over bridge",
+      "lod": "far",
+      "x": 0.09160443671439822,
+      "y": 136.12809285516846,
+      "w": 150.06692942399206,
+      "d": 6,
+      "base": 8.6,
+      "height": 0.7,
+      "meta": {
+        "Span": "150 m",
+        "Deck height": "8.6 m",
+        "Crosses": "All platforms"
+      }
+    },
+    {
+      "ref": "VSKP-BLD-01",
+      "kind": "station_building",
+      "shape": "box",
+      "label": "Main station building",
+      "lod": "far",
+      "x": 106.12506914871044,
+      "y": -16.54438671487989,
+      "w": 46,
+      "d": 132,
+      "base": 0,
+      "height": 16,
+      "meta": {
+        "Storeys": 3,
+        "Footprint": "132 x 46 m",
+        "Frontage": "Gnanapuram side"
+      }
+    },
+    {
+      "ref": "VSKP-CON-01",
+      "kind": "concourse",
+      "shape": "box",
+      "label": "Concourse",
+      "lod": "far",
+      "x": 74.12506914871044,
+      "y": -16.54438671487989,
+      "w": 22,
+      "d": 132,
+      "base": 0,
+      "height": 7.5,
+      "meta": {
+        "Connects": "Main building to the platforms"
+      }
+    },
+    {
+      "ref": "VSKP-ENT-01",
+      "kind": "entrance",
+      "shape": "box",
+      "label": "Entrance",
+      "lod": "mid",
+      "x": 136.12506914871045,
+      "y": -58.54438671487989,
+      "w": 13,
+      "d": 15,
+      "base": 0,
+      "height": 6.5,
+      "meta": {
+        "Type": "Passenger entrance / exit"
+      }
+    },
+    {
+      "ref": "VSKP-ENT-02",
+      "kind": "entrance",
+      "shape": "box",
+      "label": "Entrance",
+      "lod": "mid",
+      "x": 136.12506914871045,
+      "y": 25.45561328512011,
+      "w": 13,
+      "d": 15,
+      "base": 0,
+      "height": 6.5,
+      "meta": {
+        "Type": "Passenger entrance / exit"
+      }
+    },
+    {
+      "ref": "VSKP-PRK-01",
+      "kind": "parking",
+      "shape": "box",
+      "label": "Parking area",
+      "lod": "mid",
+      "x": 168.12506914871045,
+      "y": -86.54438671487989,
+      "w": 42,
+      "d": 72,
+      "base": 0.02,
+      "height": 0.06,
+      "meta": {
+        "Surface": "Paved"
+      }
+    },
+    {
+      "ref": "VSKP-PRK-02",
+      "kind": "parking",
+      "shape": "box",
+      "label": "Parking area",
+      "lod": "mid",
+      "x": 168.12506914871045,
+      "y": 53.45561328512011,
+      "w": 42,
+      "d": 72,
+      "base": 0.02,
+      "height": 0.06,
+      "meta": {
+        "Surface": "Paved"
+      }
+    },
+    {
+      "ref": "VSKP-RD-01",
+      "kind": "road",
+      "shape": "strip",
+      "label": "Station approach road",
+      "lod": "far",
+      "points": [
+        [
+          196.12506914871045,
+          -423.5272948286261
+        ],
+        [
+          184.12506914871045,
+          -16.54438671487989
+        ],
+        [
+          196.12506914871045,
+          390.4385213988663
+        ]
+      ],
+      "width": 14,
+      "base": 0.01,
+      "height": 0.05,
+      "meta": {
+        "Lanes": 2,
+        "Serves": "Main entrance and parking"
+      }
+    }
+  ]
+}

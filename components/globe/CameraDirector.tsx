@@ -98,8 +98,30 @@ export default function CameraDirector() {
   const isolatedFloor = useViewStore((s) => s.isolatedFloor);
   const selectedUnitId = useViewStore((s) => s.selectedUnitId);
   const underground = useViewStore((s) => s.underground);
+  const activeSiteId = useViewStore((s) => s.activeSiteId);
+  const sites = useDataStore((s) => s.sites);
   const buildings = useDataStore((s) => s.buildings);
   const detail = useActiveDetail();
+
+  /**
+   * Where the active site is and how big it is, from the INDEX.
+   *
+   * Deliberately not from the specification: the camera should start moving
+   * the moment a site is chosen, and the spec is a separate fetch that has
+   * not landed yet. The index carries an anchor and an extent for exactly
+   * this, and the flight and the geometry then arrive together.
+   */
+  const site = activeSiteId
+    ? (sites ?? []).find((x) => x.id === activeSiteId) ?? null
+    : null;
+  const siteSpanM = site
+    ? Math.max(
+      (site.extent[2] - site.extent[0])
+          * 111320 * Math.cos(Cesium.Math.toRadians(site.anchor.lat)),
+      (site.extent[3] - site.extent[1]) * 110574,
+      60,
+    )
+    : 0;
 
   useEffect(() => {
     if (!viewer || !ready || viewer.isDestroyed()) return;
@@ -115,6 +137,18 @@ export default function CameraDirector() {
     // basement whose conflict the user is most likely chasing.
     if (underground) {
       const target = (() => {
+        // A site being inspected wins: the user opened the flyover and then
+        // asked what runs under it, and the answer is under the flyover.
+        if (site) {
+          return {
+            lon: site.anchor.lon,
+            lat: site.anchor.lat,
+            // Closer than the surface pose. A 300 mm main is sub-pixel from
+            // 300 m, and the mode is about reading the corridors rather than
+            // taking in the structure.
+            height: Math.max(70, Math.min(170, siteSpanM * 0.2)),
+          };
+        }
         if (activeBuildingId != null && buildings) {
           const f = buildings.features.find((x) => x.properties.id === activeBuildingId);
           if (f) {
@@ -125,6 +159,31 @@ export default function CameraDirector() {
         return { ...aoiCentre, height: 130 };
       })();
       flyToPose(camera, poseFor(target.lon, target.lat, 0, target.height, -18));
+      return;
+    }
+
+    // ---- SITE ------------------------------------------------------------
+    // A named structure, framed along its own long axis rather than from the
+    // default north-east. The pitch is shallower than the city pose because
+    // these are LONG and LOW -- a 700 m station seen from -55 degrees is a
+    // grey stripe, and what makes it read is looking across it.
+    //
+    // Selecting a COMPONENT deliberately does not move the camera, and
+    // selectedComponent is absent from this effect's dependencies for that
+    // reason -- the same rule streets and utilities follow.
+    if (site && activeBuildingId == null) {
+      flyToPose(camera, poseFor(
+        site.anchor.lon,
+        site.anchor.lat,
+        0,
+        // Close enough that the STRUCTURE reads, not just its footprint. A
+        // 1.4 km flyover framed to fit puts the camera beyond the band its
+        // pillars are drawn in, so the demonstration shows a grey ribbon and
+        // none of the thing it is a demonstration of.
+        Math.max(170, Math.min(700, siteSpanM * 0.55)),
+        -38,
+        20,
+      ));
       return;
     }
 
@@ -196,7 +255,7 @@ export default function CameraDirector() {
     });
   }, [
     viewer, ready, ground, mode, activeBuildingId, isolatedFloor,
-    selectedUnitId, underground, buildings, detail,
+    selectedUnitId, underground, buildings, detail, site, siteSpanM,
   ]);
 
   // Auto-spin is camera motion, so it is owned here too rather than by the

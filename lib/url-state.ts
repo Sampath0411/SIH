@@ -23,6 +23,9 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { useViewStore, type ViewState } from './store';
 import type { BuildingStyle, LayerKey } from './types';
+import {
+  UNDERGROUND_DEFAULTS, UNDERGROUND_ORDER, type UtilityCategory,
+} from './underground/categories';
 import type { ProviderId, TreatmentId } from './cesium/imagery-catalog';
 import { PROVIDER_LABELS, TREATMENT_LABELS } from './cesium/imagery-catalog';
 
@@ -44,6 +47,32 @@ const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   utilities: false, terrain: true, basemap: true,
   bhuvanLulc: false, bhuvanFlood: false, bhuvanCyclone: false,
 };
+
+/**
+ * Short codes for the underground strata, in registry order.
+ *
+ * Derived from UNDERGROUND_ORDER rather than written out, so adding a category
+ * cannot leave the URL silently unable to express it. First letters happen to
+ * be unique across the seven; the assertion below is what keeps that true.
+ */
+const UG_CODE: Record<UtilityCategory, string> = Object.fromEntries(
+  UNDERGROUND_ORDER.map((k) => [k, k[0]]),
+) as Record<UtilityCategory, string>;
+
+if (new Set(Object.values(UG_CODE)).size !== UNDERGROUND_ORDER.length) {
+  // A duplicate code would make two strata indistinguishable in a shared link.
+  throw new Error('underground category codes are not unique; give one an explicit code');
+}
+
+function encodeUnderground(v: Record<UtilityCategory, boolean>): string {
+  return UNDERGROUND_ORDER.filter((k) => v[k]).map((k) => UG_CODE[k]).join('');
+}
+
+function decodeUnderground(raw: string): Record<UtilityCategory, boolean> {
+  const out = {} as Record<UtilityCategory, boolean>;
+  for (const k of UNDERGROUND_ORDER) out[k] = raw.includes(UG_CODE[k]);
+  return out;
+}
 
 const DEFAULTS = {
   explodeT: 0,
@@ -87,6 +116,7 @@ export type UrlState = Pick<
   'activeBuildingId' | 'isolatedFloor' | 'selectedUnitId' | 'selectedUtilityId'
   | 'selectedRoadId'
   | 'layers' | 'explodeT' | 'transparency' | 'theme' | 'underground'
+  | 'undergroundLayers' | 'activeSiteId' | 'selectedComponent'
   | 'imageryProvider' | 'imageryTreatment' | 'buildingStyle'
 >;
 
@@ -98,6 +128,11 @@ export function serialise(s: UrlState): string {
   if (s.isolatedFloor !== null) q.set('f', String(s.isolatedFloor));
   if (s.selectedUnitId !== null) q.set('unit', String(s.selectedUnitId));
   if (s.selectedUtilityId !== null) q.set('util', String(s.selectedUtilityId));
+  if (s.activeSiteId !== null) q.set('site', s.activeSiteId);
+  // Only meaningful alongside its site, and the site is what the parser
+  // requires before it will restore one -- a component ref with no
+  // structure open would select something that is not in the scene.
+  if (s.selectedComponent !== null) q.set('cmp', s.selectedComponent.ref);
 
   if (s.buildingStyle !== DEFAULTS.buildingStyle) q.set('style', s.buildingStyle);
   if (s.imageryProvider !== DEFAULTS.imageryProvider) q.set('img', s.imageryProvider);
@@ -111,6 +146,11 @@ export function serialise(s: UrlState): string {
   if (s.explodeT !== DEFAULTS.explodeT) q.set('x', String(Math.round(s.explodeT)));
   if (s.transparency !== DEFAULTS.transparency) q.set('t', String(Math.round(s.transparency)));
   if (s.underground !== DEFAULTS.underground) q.set('ug', s.underground ? '1' : '0');
+
+  const strata = encodeUnderground(s.undergroundLayers);
+  // '-' for "every stratum off", for the same reason `layers` uses it: an
+  // empty value round-trips as an absent param and would restore the defaults.
+  if (strata !== encodeUnderground(UNDERGROUND_DEFAULTS)) q.set('ugl', strata || '-');
   if (s.theme !== DEFAULTS.theme) q.set('theme', s.theme);
 
   return q.toString();
@@ -132,11 +172,19 @@ export function parse(search: string): Partial<ViewState> {
   const f = intParam(q.get('f'), -20, 200);
   const unit = idParam(q.get('unit'));
   const util = idParam(q.get('util'));
+  // Validated the way lib/projects.ts validates a slug: it is joined onto a
+  // directory server-side, and a shared link is untrusted input.
+  const siteRaw = q.get('site');
+  const site = siteRaw && /^[a-z0-9][a-z0-9-]{0,63}$/.test(siteRaw) ? siteRaw : null;
+  const cmpRaw = q.get('cmp');
+  const cmp = cmpRaw && /^[A-Za-z0-9][A-Za-z0-9-]{0,63}$/.test(cmpRaw) ? cmpRaw : null;
 
   if (b !== null) patch.activeBuildingId = b;
   if (f !== null) patch.isolatedFloor = f;
   if (unit !== null) patch.selectedUnitId = unit;
   if (util !== null) patch.selectedUtilityId = util;
+  if (site !== null) patch.activeSiteId = site;
+  if (site !== null && cmp !== null) patch.selectedComponent = { siteId: site, ref: cmp };
 
   // The store never holds a mode inconsistent with its selection, so neither
   // may a URL. Deepest present selection wins, matching selectUnit/isolateFloor.
@@ -164,6 +212,9 @@ export function parse(search: string): Partial<ViewState> {
 
   const ug = q.get('ug');
   if (ug === '1' || ug === '0') patch.underground = ug === '1';
+
+  const ugl = q.get('ugl');
+  if (ugl !== null) patch.undergroundLayers = decodeUnderground(ugl);
 
   const theme = q.get('theme');
   if (theme === 'dark' || theme === 'light') patch.theme = theme;

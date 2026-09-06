@@ -1,0 +1,38 @@
+{
+  "sites": [
+    {
+      "id": "telugu-thalli-flyover",
+      "name": "Telugu Thalli Flyover",
+      "kind": "flyover",
+      "summary": "Four-lane grade separation at Asilmetta, carrying Dondaparthi Road over Asilmetta Road.",
+      "anchor": {
+        "lon": 83.3029481,
+        "lat": 17.7249321
+      },
+      "extent": [
+        83.296505,
+        17.724262,
+        83.310085,
+        17.725455
+      ],
+      "components": 45
+    },
+    {
+      "id": "vskp-railway-station",
+      "name": "Visakhapatnam Railway Station",
+      "kind": "railway_station",
+      "summary": "South Coast Railway zone terminus at Gnanapuram — 8 platforms, 10 tracks.",
+      "anchor": {
+        "lon": 83.2897309,
+        "lat": 17.721693
+      },
+      "extent": [
+        83.286501,
+        17.717738,
+        83.291012,
+        17.724815
+      ],
+      "components": 21
+    }
+  ]
+}

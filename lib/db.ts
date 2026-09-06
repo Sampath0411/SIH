@@ -1,6 +1,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Pool } from 'pg';
+import type { SiteIndex, SiteSpec } from './infra/types';
 import type {
   BuildingDetail, BuildingProps, ConflictRow, EnrichedBuilding, FlatRegisterEntry,
   GeoFC, ParcelInfo, Project, ProjectStats, RoadProps, StackHit, UtilityProps,
@@ -813,6 +814,47 @@ export async function getRoads(slug: string): Promise<GeoFC<RoadProps>> {
         + `data/api/${slug}/roads.json; until that runs this project has no `
         + 'centrelines to draw. Nothing else about the project is affected.',
     } as GeoFC<RoadProps>;
+  }
+}
+
+/**
+ * A site id is a path segment joined onto a directory, so it is validated the
+ * way lib/projects.ts validates a slug -- and for the same reason.
+ */
+export function isValidSiteId(id: string): boolean {
+  return typeof id === 'string' && /^[a-z0-9][a-z0-9-]{0,63}$/.test(id);
+}
+
+/**
+ * The project's named infrastructure sites.
+ *
+ * Snapshot-only, exactly like streets: there is no `site` table, because a
+ * platform is not a cadastral object and giving it one would mean minting it a
+ * ULPIN, an owner and a tenure that do not exist. A project with no sites is
+ * not an error -- it is every project but one -- so this answers with an empty
+ * list rather than throwing.
+ */
+export async function getSites(slug: string): Promise<SiteIndex> {
+  try {
+    return await snapshot<SiteIndex>(slug, 'sites.json');
+  } catch {
+    return { sites: [] };
+  }
+}
+
+/**
+ * One site's full specification.
+ *
+ * Fetched separately from the index, and only when a site is actually opened:
+ * the index is a few hundred bytes and drives the navigator, while a station
+ * spec is the whole structure. Null when the project does not have it.
+ */
+export async function getSiteSpec(slug: string, siteId: string): Promise<SiteSpec | null> {
+  if (!isValidSiteId(siteId)) return null;
+  try {
+    return await snapshot<SiteSpec>(slug, path.join('infra', `${siteId}.json`));
+  } catch {
+    return null;
   }
 }
 

@@ -157,16 +157,22 @@ export default function Picker() {
   const selectUnit = useViewStore((s) => s.selectUnit);
   const openUnit = useViewStore((s) => s.openUnit);
   const selectUtility = useViewStore((s) => s.selectUtility);
+  const selectComponent = useViewStore((s) => s.selectComponent);
   const selectRoad = useViewStore((s) => s.selectRoad);
   const clearAmbient = useViewStore((s) => s.clearAmbient);
   const setHover = useViewStore((s) => s.setHover);
   const roadsVisible = useViewStore((s) => s.layers.roads);
+  const activeSiteId = useViewStore((s) => s.activeSiteId);
 
   // Read through a ref inside the handlers rather than closed over: making it
   // an effect dependency would tear down and rebuild the ScreenSpaceEventHandler
   // every time the streets layer is toggled.
   const roadsVisibleRef = useRef(roadsVisible);
   useEffect(() => { roadsVisibleRef.current = roadsVisible; }, [roadsVisible]);
+
+  /** Which site a picked component belongs to. Ref, for the same reason. */
+  const activeSiteIdRef = useRef(activeSiteId);
+  useEffect(() => { activeSiteIdRef.current = activeSiteId; }, [activeSiteId]);
 
   /**
    * City mode means UnitsLayer has drawn nothing, so no drill is needed to
@@ -273,6 +279,18 @@ export default function Picker() {
         case 'floor':
           if (tag.level !== undefined) isolateFloor(tag.level);
           break;
+        case 'infra':
+          // A component's identity is its REF, not the numeric pick handle
+          // the tag carries -- that handle exists only because EntityTag.id
+          // is a number. No ref means nothing to select.
+          //
+          // No camera move, following the street and utility precedent: the
+          // user clicked a pillar to read it, not to travel to it, and they
+          // are already standing in front of it.
+          if (tag.ref && activeSiteIdRef.current) {
+            selectComponent(activeSiteIdRef.current, tag.ref);
+          }
+          break;
         case 'utility':
           selectUtility(tag.id);
           break;
@@ -297,7 +315,7 @@ export default function Picker() {
       if (!handler.isDestroyed()) handler.destroy();
     };
   }, [viewer, ready, selectBuilding, isolateFloor, selectUnit, openUnit,
-      selectUtility, setHover]);
+      selectUtility, selectComponent, setHover]);
 
   return null;
 }

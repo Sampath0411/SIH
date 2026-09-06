@@ -65,6 +65,24 @@ const shot = async (page, name) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Poll until `fn` returns truthy, or give up.
+ *
+ * The underground layers are LAZY on purpose -- a stratum is not built
+ * until it is asked for, and the ground field it is hung off is a terrain
+ * batch that has to arrive first. A fixed sleep therefore measures the
+ * network rather than the app, and was the difference between this walk
+ * passing and failing between runs.
+ */
+async function waitFor(page, fn, { timeout = 20000, every = 500 } = {}) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    if (await page.evaluate(fn)) return true;
+    if (Date.now() > until) return false;
+    await sleep(every);
+  }
+}
+
 /** Whole-page text. Robust to layout changes in a way a class selector is not. */
 const panelText = (page) =>
   page.evaluate(() => document.body.innerText.replace(/\s+/g, ' ').trim());
@@ -97,8 +115,22 @@ try {
   page.on('console', (m) => {
     if (m.type() === 'error') errors.push(m.text());
   });
-  page.on('requestfailed', (r) =>
-    errors.push(`REQFAIL ${r.url().slice(0, 120)}`));
+  /**
+   * A failed request, with the reason.
+   *
+   * ERR_ABORTED is excluded, and only that one. An aborted request is the
+   * BROWSER cancelling work it decided it no longer needs -- in practice a
+   * Next.js router prefetch (`?_rsc=`) that is dropped when the walk clicks
+   * something before it lands. Nothing in the application failed, nothing the
+   * user would see changed, and counting it made the walk report an error
+   * whose message was a URL with no reason attached. Every other failure
+   * reason still fails the check, and now says what it was.
+   */
+  page.on('requestfailed', (r) => {
+    const why = r.failure()?.errorText ?? 'unknown';
+    if (why === 'net::ERR_ABORTED') return;
+    errors.push(`REQFAIL ${why} ${r.url().slice(0, 120)}`);
+  });
   page.on('response', (r) => {
     if (r.status() >= 400) errors.push(`HTTP ${r.status()} ${r.url().slice(0, 120)}`);
   });
@@ -395,8 +427,155 @@ try {
   const body = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
   check('conflict banner names a conflict', /utility\/basement conflict/i.test(body));
   check('conflict count is real', /1[0-9] utility\/basement conflict|[1-9] utility\/basement conflict/.test(body));
-  check('utility legend shown', /Utility corridors/i.test(body));
+  check('underground panel shown', /Underground infrastructure/i.test(body));
+  check('depth section shown', /Depth section/i.test(body));
   check('ST_3DIntersects credited', /ST_3DIntersects/i.test(body));
+  check('utility provenance disclosed',
+    /not as-built utility records|No utility survey was consulted/i.test(body));
+
+  // The redesign's point: the strata are individually switchable, and only the
+  // ones asked for are BUILT. Water is the only default, so before touching
+  // anything there must be exactly one category data source in the scene --
+  // once the terrain batch it hangs off has arrived.
+  const built = await waitFor(page, () => {
+    const v = window.__ulpinViewer;
+    if (!v) return false;
+    for (let i = 0; i < v.dataSources.length; i++) {
+      if ((v.dataSources.get(i).name || '').startsWith('utilities:')) return true;
+    }
+    return false;
+  });
+  check('the default stratum builds once underground is on', built);
+
+  const strata = await page.evaluate(() => {
+    const v = window.__ulpinViewer;
+    if (!v) return { seam: false, names: [] };
+    const names = [];
+    for (let i = 0; i < v.dataSources.length; i++) {
+      const n = v.dataSources.get(i).name || '';
+      if (n.startsWith('utilities:')) names.push(n.split('#')[0]);
+    }
+    return { seam: true, names: [...new Set(names)] };
+  });
+  check('viewer seam present', strata.seam);
+  check('only the default stratum is built', strata.names.length === 1
+    && strata.names[0] === 'utilities:water', strata.names.join(','));
+
+  // Switching a second category on builds it; nothing else is rebuilt.
+  const toggled = await page.evaluate(() => {
+    const el = [...document.querySelectorAll('label')]
+      .find((x) => x.getAttribute('aria-label') === 'Sewerage');
+    if (el) el.click();
+    return Boolean(el);
+  });
+  check('a second stratum can be switched on', toggled);
+  await sleep(2500);
+  const after = await page.evaluate(() => {
+    const v = window.__ulpinViewer;
+    const names = new Set();
+    let tubes = 0;
+    for (let i = 0; i < v.dataSources.length; i++) {
+      const ds = v.dataSources.get(i);
+      const n = ds.name || '';
+      if (!n.startsWith('utilities:')) continue;
+      names.add(n.split('#')[0]);
+      if (n.startsWith('utilities:sewer')) {
+        for (const e of ds.entities.values) if (e.polylineVolume) tubes++;
+      }
+    }
+    return { names: [...names], tubes };
+  });
+  check('the second stratum was built on demand',
+    after.names.includes('utilities:sewer'), after.names.join(','));
+  check('it carries geometry', after.tubes > 0, `${after.tubes} tubes`);
+
+  // Every network must FOLLOW the ground rather than cut through it.
+  //
+  // This is the regression the layout redesign exists to fix. The generator
+  // bakes one AOI-wide mean ground elevation into every vertex, so over
+  // Siripuram's 63 m of relief a "1 m deep" run was 12 m under the hill at one
+  // end and 19 m above the hollow at the other -- 48 % of it drawn in mid-air,
+  // through buildings.
+  //
+  // MEASURED NEAR THE CAMERA, and that restriction is not a convenience. The
+  // layer hangs its geometry off terrain sampled at a fixed tile level for the
+  // whole project; globe.getHeight() answers from whichever tile is currently
+  // loaded, which for a close underground view is high detail nearby and very
+  // coarse far away. Comparing the two across the whole AOI therefore measures
+  // the tile pyramid, not the layout -- it reported a 20 m spread on geometry
+  // that a full-detail comparison puts at about 2 m. Inside the radius below
+  // the two representations agree, so this is the region where the question
+  // can actually be asked.
+  //
+  // The measure is SPREAD rather than a count of vertices above ground: depth
+  // below local ground used to range over 31 m within a single class and now
+  // ranges over a few, and no amount of tile-load luck turns one into the
+  // other.
+  const NEAR_M = 500;
+  await waitFor(page, () => window.__ulpinViewer?.scene.globe.tilesLoaded === true,
+    { timeout: 25000 });
+  await sleep(1500);
+  const buried = await page.evaluate((nearM) => {
+    const v = window.__ulpinViewer;
+    if (!v) return { skipped: 'no viewer seam' };
+    const ell = v.scene.globe.ellipsoid;
+    const now = v.clock.currentTime;
+    const eye = ell.cartesianToCartographic(v.camera.positionWC);
+    if (!eye) return { skipped: 'no camera position' };
+    const mLat = 110574;
+    const mLon = 111320 * Math.cos(eye.latitude);
+
+    const per = new Map();
+    for (let i = 0; i < v.dataSources.length; i++) {
+      const ds = v.dataSources.get(i);
+      const name = ds.name || '';
+      if (!name.startsWith('utilities:')) continue;
+      const cat = name.split('#')[0].slice('utilities:'.length);
+      if (!per.has(cat)) per.set(cat, []);
+      const d = per.get(cat);
+      for (const e of ds.entities.values) {
+        const pv = e.polylineVolume;
+        if (!pv) continue;
+        const pts = pv.positions.getValue(now);
+        if (!pts) continue;
+        for (const pt of pts) {
+          const c = ell.cartesianToCartographic(pt);
+          if (!c) continue;
+          const dx = (c.longitude - eye.longitude) * (180 / Math.PI) * mLon;
+          const dy = (c.latitude - eye.latitude) * (180 / Math.PI) * mLat;
+          if (Math.hypot(dx, dy) > nearM) continue;
+          const g = v.scene.globe.getHeight(c);
+          if (g !== undefined) d.push(c.height - g);
+        }
+      }
+    }
+
+    const rows = [];
+    for (const [cat, d] of per) {
+      if (d.length < 40) continue;
+      d.sort((a, b) => a - b);
+      const q = (f) => d[Math.floor(f * (d.length - 1))];
+      rows.push({
+        cat,
+        n: d.length,
+        median: Math.round(q(0.5) * 100) / 100,
+        spread: Math.round((q(0.95) - q(0.05)) * 100) / 100,
+      });
+    }
+    return { rows };
+  }, NEAR_M);
+
+  if (buried.skipped || !buried.rows || buried.rows.length === 0) {
+    console.log('  SKIP  networks follow the ground — '
+      + `${buried.skipped ?? `no run within ${NEAR_M} m of the camera`}`);
+  } else {
+    for (const r of buried.rows) {
+      check(`${r.cat} follows the ground`,
+        r.median < -0.4 && r.spread < 6,
+        `median ${r.median} m, 5-95 spread ${r.spread} m over ${r.n} vertices`);
+    }
+  }
+
   await shot(page, '6-underground');
 
   // ------------------------------------------------------------ POLISH PACK

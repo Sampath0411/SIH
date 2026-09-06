@@ -1,17 +1,22 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 
-import { useDataStore, useDetailPending, useEditStore, useEnsureDetail, useViewStore, useBuildingNeighbours, useBuildingConflicts, useParcelSiblings, useEnsureLulc, useLulcPending } from '@/lib/store';
+import { useDataStore, useDetailPending, useEditStore, useEnsureDetail, useViewStore, useBuildingNeighbours, useBuildingConflicts, useParcelSiblings, useEnsureLulc, useLulcPending, useEnsureSite } from '@/lib/store';
+import { componentForRef } from '@/components/layers/InfraSiteLayer';
 import { LULC_SOURCE_SHORT, lulcClassLabel } from '@/lib/bhuvan';
 import { RISK_HEX } from '@/lib/cesium/materials';
 import type { RiskClass } from '@/lib/types';
 import BuildingEditForm from './detail/BuildingEditForm';
 import UnsavedBanner from './detail/UnsavedBanner';
-import { ROAD_CLASS_LABEL, UTILITY_LABEL } from '@/lib/cesium/materials';
+import { ROAD_CLASS_LABEL, utilityAssetLabel } from '@/lib/cesium/materials';
+import {
+  UNDERGROUND_BY_KEY, categoryOfAssetType,
+} from '@/lib/underground/categories';
+import { resolveCategoryDepths } from '@/lib/underground/layout';
 import { levelLabel, parentOf } from '@/lib/ulpin';
 import { orientedDims, ringCentroid } from '@/lib/geo';
-import type { AssetType, Provenance, RoadProps, UtilityProps } from '@/lib/types';
+import type { Provenance, RoadProps, UtilityProps } from '@/lib/types';
 import UlpinCard from './UlpinCard';
 import CountUp from './CountUp';
 import { DERIVED_PARCEL_NOTE, MOCK_BUILDING_NOTE, ProvenanceRow } from './Provenance';
@@ -39,7 +44,7 @@ function Row({
    * viewer generated, and a blanket "some of this is synthetic" footnote would
    * leave the user unable to tell which they are looking at.
    */
-  source?: 'osm_tag' | 'generated' | 'derived' | 'bhuvan';
+  source?: 'osm_tag' | 'generated' | 'derived' | 'bhuvan' | 'reference';
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-[3px]">
@@ -53,7 +58,21 @@ function Row({
 }
 
 /** Marks a single value as mapped fact or as a demonstration value. */
-function SourceChip({ source }: { source: 'osm_tag' | 'generated' | 'derived' | 'bhuvan' }) {
+function SourceChip({
+  source,
+}: {
+  source: 'osm_tag' | 'generated' | 'derived' | 'bhuvan' | 'reference';
+}) {
+  if (source === 'reference') {
+    return (
+      <span
+        title="Published by a cited reference. Not surveyed here, and not computed by this viewer."
+        className="chip shrink-0 border border-[rgb(var(--edge-strong))] text-[rgb(var(--muted))]"
+      >
+        cited
+      </span>
+    );
+  }
   if (source === 'bhuvan') {
     return (
       <span
@@ -182,6 +201,10 @@ export default function DetailPanel() {
   const isolatedFloor = useViewStore((s) => s.isolatedFloor);
   const selectedUnitId = useViewStore((s) => s.selectedUnitId);
   const selectedUtilityId = useViewStore((s) => s.selectedUtilityId);
+  const activeSiteId = useViewStore((s) => s.activeSiteId);
+  const selectedComponent = useViewStore((s) => s.selectedComponent);
+  const selectSite = useViewStore((s) => s.selectSite);
+  const clearAmbient = useViewStore((s) => s.clearAmbient);
   const selectedRoadId = useViewStore((s) => s.selectedRoadId);
   const underground = useViewStore((s) => s.underground);
   const session = useViewStore((s) => s.session);
@@ -206,6 +229,22 @@ export default function DetailPanel() {
   const lulc = useEnsureLulc(activeBuildingId, lulcLayer);
   const lulcPending = useLulcPending(activeBuildingId);
 
+  /**
+   * Per-category display depth offsets, from the same pure function the
+   * underground layer builds its geometry with.
+   *
+   * Memoised on the collection, not on the selection: it is one pass over the
+   * runs and it does not change when the user picks a different pipe.
+   */
+  // Already cached by the layer that opened the site; this is a read, not a
+  // second fetch.
+  const siteSpec = useEnsureSite(activeSiteId);
+
+  const categoryAdjust = useMemo(
+    () => resolveCategoryDepths(utilities?.features ?? []),
+    [utilities],
+  );
+
   // Derived context selectors -- also called unconditionally, even when
   // they return an empty array (no active selection).
   // The "saved" confirmation clears itself; it is an acknowledgement, not a
@@ -229,6 +268,7 @@ export default function DetailPanel() {
     const r = feat?.properties as RoadProps | undefined;
     if (r) {
       const derived = r.name_source === 'derived';
+      const referenced = r.name_source === 'reference';
       return (
         <Panel title={r.name} kicker="Street">
           <Row
@@ -243,24 +283,33 @@ export default function DetailPanel() {
           {r.surface ? (
             <Row label="Surface" value={<span className="capitalize">{r.surface}</span>} />
           ) : null}
-          <Row
-            label="Merged from"
-            value={`${r.segments} OSM way${r.segments === 1 ? '' : 's'}`}
-          />
-          <Row
-            label="OSM ways"
-            value={
-              <span className="font-mono text-[10px] text-[rgb(var(--muted))]">
-                {r.osm_ids.slice(0, 3).join(', ')}
-                {r.osm_ids.length > 3 ? ` +${r.osm_ids.length - 3}` : ''}
-              </span>
-            }
-          />
-          {/* An OSM-tagged name is mapped fact; a derived one is this viewer's
-              own label. The provenance row is where that distinction is made,
-              exactly as it is for building heights. */}
+          {r.osm_ids.length > 0 ? (
+            <>
+              <Row
+                label="Merged from"
+                value={`${r.segments} OSM way${r.segments === 1 ? '' : 's'}`}
+              />
+              <Row
+                label="OSM ways"
+                value={
+                  <span className="font-mono text-[10px] text-[rgb(var(--muted))]">
+                    {r.osm_ids.slice(0, 3).join(', ')}
+                    {r.osm_ids.length > 3 ? ` +${r.osm_ids.length - 3}` : ''}
+                  </span>
+                }
+              />
+            </>
+          ) : (
+            <Row label="Segments" value={r.segments} source="derived" />
+          )}
+          {/* Three provenances, three different claims. An OSM-tagged name is
+              mapped fact; a referenced one is a name a cited source publishes
+              but nobody surveyed here; a derived one is this viewer's own
+              label and must never be quoted as a municipal street name. The
+              provenance row is where that distinction is made, exactly as it
+              is for building heights. */}
           <ProvenanceRow
-            source={derived ? 'estimated' : 'osm_tag'}
+            source={derived || referenced ? 'estimated' : 'osm_tag'}
             note={
               derived
                 ? 'Centreline geometry and classification are from OpenStreetMap. '
@@ -268,9 +317,14 @@ export default function DetailPanel() {
                   + `this viewer from its position relative to `
                   + `${r.derived_from ?? 'the surrounding area'}. It is NOT a municipal `
                   + `street name — quote ${r.ref} instead.`
-                : 'Street name, classification and centreline mapped in '
-                  + 'OpenStreetMap by a contributor. Length is computed '
-                  + 'geodesically from that centreline.'
+                : referenced
+                  ? `Name published by ${r.derived_from ?? 'a cited reference'}. `
+                    + 'The centreline itself is DERIVED for this demonstration '
+                    + 'from the site specification — it is not a surveyed '
+                    + 'alignment, and the length above is measured off it.'
+                  : 'Street name, classification and centreline mapped in '
+                    + 'OpenStreetMap by a contributor. Length is computed '
+                    + 'geodesically from that centreline.'
             }
           />
         </Panel>
@@ -284,13 +338,38 @@ export default function DetailPanel() {
     const u = feat?.properties as UtilityProps | undefined;
     if (u) {
       const related = conflicts.filter((c) => c.utility_id === u.id);
+      const category = categoryOfAssetType(u.asset_type);
+      const layer = category ? UNDERGROUND_BY_KEY[category] : null;
+
+      // Recomputed here from the same inputs and the same pure function the
+      // layer uses, rather than plumbed across from it. A layer never writes
+      // to a store, so there is nowhere for it to publish this; and two calls
+      // to resolveCategoryDepths over one dataset cannot disagree.
+      const shift = categoryAdjust[category ?? 'water'] ?? 0;
+      const drawnDepth = u.depth_m + shift;
+      const displaced = Math.abs(shift) > 0.05;
+      const lane = layer?.lane ?? 0;
+
       return (
-        <Panel title={UTILITY_LABEL[u.asset_type as AssetType]} kicker="Utility asset">
-          <Row label="Asset ID" value={<span className="font-mono">#{u.id}</span>} />
-          <Row label="Type" value={UTILITY_LABEL[u.asset_type as AssetType]} />
-          <Row label="Depth" value={`${u.depth_m.toFixed(1)} m below datum`} />
+        <Panel title={utilityAssetLabel(u.asset_type)} kicker="Underground asset">
+          <Row
+            label="Asset ID"
+            value={<span className="font-mono">{u.ref ?? `#${u.id}`}</span>}
+          />
+          <Row label="Type" value={layer ? layer.label : u.asset_type} />
+          <Row label="Recorded depth" value={`${u.depth_m.toFixed(1)} m below ground`} />
+          {u.diameter_mm !== undefined ? (
+            <Row label="Diameter" value={`${u.diameter_mm} mm`} />
+          ) : null}
+          {u.material !== undefined ? <Row label="Material" value={u.material} /> : null}
           <Row label="Corridor radius" value={m(u.radius_m)} />
           <Row label="Authority" value={u.authority} />
+          {u.connected_area !== undefined ? (
+            <Row label="Connected area" value={u.connected_area} />
+          ) : null}
+          {u.installed_on !== undefined ? (
+            <Row label="Installed" value={longDate(u.installed_on)} />
+          ) : null}
           <Row
             label="Status"
             value={
@@ -299,6 +378,39 @@ export default function DetailPanel() {
               </span>
             }
           />
+
+          {/*
+            The display offset, stated rather than hidden.
+
+            The viewer moves buried services apart so that six networks in one
+            view stay legible -- a per-category corridor, and a depth nudge on
+            the rare category that would otherwise sit inside the one above.
+            Neither touches the record: the rows above are what the data says,
+            and this is what the screen is doing to it. Shown only when there
+            is something to disclose.
+          */}
+          {displaced || lane !== 0 ? (
+            <div className="mt-2 rounded border border-[rgb(var(--edge))] bg-[rgb(var(--surface-2))] p-2">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-[rgb(var(--muted))]">
+                Drawn for clarity
+              </div>
+              {displaced ? (
+                <div className="mt-1 text-[11px] leading-snug text-[rgb(var(--ink))]">
+                  Shown at {drawnDepth.toFixed(1)} m to clear the layer above.
+                </div>
+              ) : null}
+              {lane !== 0 ? (
+                <div className="mt-1 text-[11px] leading-snug text-[rgb(var(--ink))]">
+                  Shown {Math.abs(lane).toFixed(1)} m to the{' '}
+                  {lane > 0 ? 'right' : 'left'} of its recorded centreline.
+                </div>
+              ) : null}
+              <div className="mt-1 text-[10px] leading-snug text-[rgb(var(--muted))]">
+                The stored coordinates are unchanged.
+              </div>
+            </div>
+          ) : null}
+
           {related.length > 0 ? (
             <div className="mt-2 rounded border border-danger/50 bg-danger/10 p-2">
               <div className="text-[11px] font-semibold text-dangerInk">
@@ -311,16 +423,121 @@ export default function DetailPanel() {
               ))}
             </div>
           ) : null}
+
           <ProvenanceRow
-            source={'estimated'}
+            source={u.provenance === 'surveyed' ? 'surveyed_plan' : 'estimated'}
+            synthetic={u.provenance === 'demonstration'}
             note={
-              'Alignment generated by offsetting OSM road centrelines. '
-              + 'Representative of a service corridor, not an as-built utility record.'
+              u.provenance === 'demonstration'
+                ? 'DEMONSTRATION DATA. No utility survey was consulted. The '
+                  + 'alignment, depth and attributes are illustrative and must '
+                  + 'not be quoted as a record of what is buried here.'
+                : 'Alignment generated by offsetting OSM road centrelines. '
+                  + 'Representative of a service corridor, not an as-built '
+                  + 'utility record.'
             }
           />
         </Panel>
       );
     }
+  }
+
+  // A building the user picked outranks the site card: they asked about that
+  // building, and a site is a place rather than a selection.
+  const bpropsSelected = activeBuildingId !== null && mode !== 'city';
+
+  // ---- infrastructure component ------------------------------------------
+  //
+  // Above the site card, below the cadastral stack: picking a pillar is an
+  // ambient selection like picking a street, and it describes what the panel
+  // shows without changing what mode the scene is in.
+  if (selectedComponent && siteSpec) {
+    const spec = siteSpec.components.find((c) => c.ref === selectedComponent.ref
+      || (c.repeat?.refPattern
+        && selectedComponent.ref.startsWith(c.repeat.refPattern.split('%')[0])));
+    const placed = componentForRef(selectedComponent.ref);
+    if (spec || placed) {
+      const label = placed?.label ?? spec?.label ?? 'Component';
+      const meta = placed?.meta ?? spec?.meta ?? {};
+      return (
+        <Panel
+          title={label}
+          kicker="Infrastructure component"
+          action={
+            <button
+              type="button"
+              onClick={() => clearAmbient()}
+              className="rounded px-1.5 py-[1px] text-[10px] text-[rgb(var(--ink))] tint-hover"
+            >
+              Clear
+            </button>
+          }
+        >
+          <Row label="Infrastructure" value={siteSpec.name} />
+          <Row label="Component" value={label} />
+          <Row
+            label="ID"
+            value={<span className="font-mono">{selectedComponent.ref}</span>}
+            source="derived"
+          />
+          {Object.entries(meta).map(([k, v]) => (
+            <Row key={k} label={k} value={String(v)} source="derived" />
+          ))}
+          <Row label="Status" value="Active" />
+          <ProvenanceRow
+            source="estimated"
+            synthetic
+            note={siteSpec.derivedNote}
+          />
+        </Panel>
+      );
+    }
+  }
+
+  // ---- infrastructure site ------------------------------------------------
+  //
+  // Shown while a site is open and nothing more specific is picked. The rows
+  // above the rule are SOURCED and each names where it came from; everything
+  // the model adds is in the component cards and is marked derived there.
+  if (activeSiteId && siteSpec && !bpropsSelected) {
+    return (
+      <Panel
+        title={siteSpec.name}
+        kicker="Infrastructure"
+        action={
+          <button
+            type="button"
+            onClick={() => selectSite(null)}
+            className="rounded px-1.5 py-[1px] text-[10px] text-[rgb(var(--ink))] tint-hover"
+          >
+            Close
+          </button>
+        }
+      >
+        <Row
+          label="Type"
+          value={siteSpec.kind === 'railway_station' ? 'Railway infrastructure' : 'Road infrastructure'}
+        />
+        {siteSpec.facts.map((f) => (
+          <Row
+            key={f.label}
+            label={f.label}
+            value={String(f.value)}
+            source={f.source === 'osm_tag' ? 'osm_tag' : 'reference'}
+          />
+        ))}
+        <Row label="Status" value="Active" />
+        <Row label="Modelled parts" value={siteSpec.components.length} source="derived" />
+
+        {/*
+          The line that keeps the card honest. Everything above it is either a
+          published figure with its source named, or a count of our own model;
+          this says which is which in words, because a chip alone does not
+          carry "no drawing was consulted".
+        */}
+        <ProvenanceRow source="estimated" synthetic note={siteSpec.derivedNote} />
+      </Panel>
+    );
   }
 
   const bprops = buildings?.features.find(
@@ -1014,7 +1231,7 @@ export default function DetailPanel() {
               className="flex w-full items-baseline justify-between gap-2 rounded px-1 py-[2px] text-left tint-hover"
             >
               <span className="row-value text-left">
-                {UTILITY_LABEL[c.asset_type as AssetType]}
+                {utilityAssetLabel(c.asset_type)}
                 <span className="ml-1 text-[rgb(var(--muted))]">
                   · {c.authority} · level {c.level_no}
                 </span>

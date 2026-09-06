@@ -6,6 +6,7 @@ import { useEffect, useMemo } from 'react';
 import { availableProviders, TREATMENT_LABELS } from '@/lib/cesium/imagery-catalog';
 import type { ProviderId, TreatmentId } from '@/lib/cesium/imagery-catalog';
 import { useViewStore } from '@/lib/store';
+import Check from './Check';
 import {
   SUN_MAX_HOUR, SUN_MIN_HOUR, SUN_NOON_HOUR, SUN_STEP_HOURS, formatSunHour,
 } from '@/lib/sun';
@@ -60,44 +61,6 @@ const LAYERS: { key: LayerKey; label: string }[] = [
   { key: 'terrain', label: 'DEM / terrain' },
   { key: 'basemap', label: 'Basemap' },
 ];
-
-function Check({
-  checked,
-  onChange,
-  label,
-}: {
-  checked: boolean;
-  onChange: () => void;
-  label: string;
-}) {
-  return (
-    <label className="flex cursor-pointer items-center gap-2 py-[3px] text-[12px] text-[rgb(var(--ink))]">
-      <span
-        onClick={onChange}
-        className={[
-          'grid h-3.5 w-3.5 shrink-0 place-items-center rounded-[3px] border transition-colors',
-          checked
-            ? 'border-[rgb(var(--accent))] bg-[rgb(var(--accent))]'
-            : 'border-[rgb(var(--edge))] bg-transparent',
-        ].join(' ')}
-      >
-        {checked ? (
-          <svg viewBox="0 0 10 10" className="h-2 w-2" aria-hidden>
-            <path
-              d="M1 5l2.5 2.5L9 2"
-              fill="none"
-              stroke="black"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        ) : null}
-      </span>
-      <span onClick={onChange}>{label}</span>
-    </label>
-  );
-}
 
 function Slider({
   label,

@@ -1,0 +1,80 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 941001,
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              83.2963917,
+              17.7241536
+            ],
+            [
+              83.3101979,
+              17.7241536
+            ],
+            [
+              83.3101979,
+              17.7255631
+            ],
+            [
+              83.2963917,
+              17.7255631
+            ],
+            [
+              83.2963917,
+              17.7241536
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": 941001,
+        "ulpin": "AP-VSP-3D26-9001",
+        "area_m2": 228163,
+        "owner": "Greater Visakhapatnam Municipal Corporation"
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 941002,
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              83.2862184,
+              17.7174671
+            ],
+            [
+              83.2912948,
+              17.7174671
+            ],
+            [
+              83.2912948,
+              17.7250868
+            ],
+            [
+              83.2862184,
+              17.7250868
+            ],
+            [
+              83.2862184,
+              17.7174671
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": 941002,
+        "ulpin": "AP-VSP-3D26-9002",
+        "area_m2": 453541,
+        "owner": "South Coast Railway (Indian Railways)"
+      }
+    }
+  ],
+  "_disclaimer": "DERIVED for demonstration from the site specifications in data/api/vizag-infra/infra/ — not a survey, a cadastral record or an as-built drawing."
+}

@@ -10,8 +10,17 @@ import type * as Cesium from 'cesium';
  * allocation per read.
  */
 export interface EntityTag {
-  kind: 'parcel' | 'building' | 'road' | 'floor' | 'unit' | 'utility';
+  kind: 'parcel' | 'building' | 'road' | 'floor' | 'unit' | 'utility' | 'infra';
   id: number;
+  /**
+   * The component's own identifier, for 'infra' only.
+   *
+   * An infrastructure component is identified by a string -- TTF-P-014 -- and
+   * `id` is a number, so the layer mints a numeric pick handle and carries the
+   * real identifier alongside it. Not a hash of the ref: a collision would
+   * select the wrong pillar, and a counter cannot collide.
+   */
+  ref?: string;
   /**
    * level_no, for floor AND unit entities.
    *

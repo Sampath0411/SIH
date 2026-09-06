@@ -1,0 +1,101 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "id": 940001,
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              83.2887185,
+              17.7221171
+            ],
+            [
+              83.2883141,
+              17.7219667
+            ],
+            [
+              83.2887642,
+              17.7208537
+            ],
+            [
+              83.2891687,
+              17.7210042
+            ],
+            [
+              83.2887185,
+              17.7221171
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": 940001,
+        "ulpin": "AP-VSP-3D26-9002-001",
+        "parcel_id": 941002,
+        "height_m": 16.4,
+        "floors": 4,
+        "basements": 0,
+        "ground_elev": 12,
+        "ground_source": "placeholder",
+        "use_type": "institutional",
+        "height_source": "estimated",
+        "survey_synthetic": false,
+        "name": "Main station building",
+        "address": "Visakhapatnam Railway Station, Visakhapatnam, Andhra Pradesh",
+        "osm_id": 0
+      }
+    },
+    {
+      "type": "Feature",
+      "id": 940002,
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              83.2888944,
+              17.7221825
+            ],
+            [
+              83.2887009,
+              17.7221106
+            ],
+            [
+              83.2891511,
+              17.7209976
+            ],
+            [
+              83.2893445,
+              17.7210696
+            ],
+            [
+              83.2888944,
+              17.7221825
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "id": 940002,
+        "ulpin": "AP-VSP-3D26-9002-002",
+        "parcel_id": 941002,
+        "height_m": 7.9,
+        "floors": 2,
+        "basements": 1,
+        "ground_elev": 12,
+        "ground_source": "placeholder",
+        "use_type": "institutional",
+        "height_source": "estimated",
+        "survey_synthetic": false,
+        "name": "Concourse",
+        "address": "Visakhapatnam Railway Station, Visakhapatnam, Andhra Pradesh",
+        "osm_id": 0
+      }
+    }
+  ],
+  "aoi": "Visakhapatnam Central Corridor",
+  "_disclaimer": "DERIVED for demonstration from the site specifications in data/api/vizag-infra/infra/ — not a survey, a cadastral record or an as-built drawing."
+}
