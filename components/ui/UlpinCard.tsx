@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { DISCLAIMER, parse } from '@/lib/ulpin';
 
 /**
@@ -22,11 +22,22 @@ export default function UlpinCard({ ulpin }: { ulpin: string }) {
   const parts = parse(ulpin, 'any');
   const segments = ulpin.split('-');
 
+  // The 1.4 s "Copied" acknowledgement must not fire setCopied on an
+  // unmounted card if the user dismissed it within the window. The
+  // unmount cleanup below clears the timer; the reschedule path also
+  // clears the prior one, so a second click resets the window instead
+  // of stacking.
+  const resetTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (resetTimer.current) clearTimeout(resetTimer.current);
+  }, []);
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(ulpin);
       setCopied(true);
-      setTimeout(() => setCopied(false), 1400);
+      if (resetTimer.current) clearTimeout(resetTimer.current);
+      resetTimer.current = setTimeout(() => setCopied(false), 1400);
     } catch {
       /* clipboard blocked; the identifier is selectable on screen anyway */
     }
