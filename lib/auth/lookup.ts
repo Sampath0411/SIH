@@ -1,6 +1,6 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { PROJECTS_DIR } from '@/lib/projects';
+import { isValidSlug, PROJECTS_DIR } from '@/lib/projects';
 
 /**
  * Read-only lookups for the demo users.
@@ -27,8 +27,15 @@ export interface Resident {
 
 /** All residents for one project. Empty array on read error -- the route
  *  then answers "unknown aadhar", which is the right answer for a fresh
- *  checkout that has not been seeded yet. */
+ *  checkout that has not been seeded yet.
+ *
+ *  The slug is validated at this entry, so a crafted caller cannot join
+ *  `../../etc` onto PROJECTS_DIR. The route already gates slugs through
+ *  listProjects(); this is the second line of defence and the one that
+ *  actually touches the filesystem, so it does not rely on a caller
+ *  having checked. */
 export async function findResidents(slug: string): Promise<Resident[]> {
+  if (!isValidSlug(slug)) return [];
   try {
     const raw = await fs.readFile(
       path.join(PROJECTS_DIR, slug, 'residents.json'),

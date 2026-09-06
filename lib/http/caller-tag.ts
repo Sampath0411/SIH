@@ -7,6 +7,8 @@
  * script rather than only through a running server.
  */
 
+import type { CallerContext } from '@/lib/auth/access-pure';
+
 /**
  * Pull the caller's identity out of a raw Cookie header.
  *
@@ -36,6 +38,12 @@
  * already run by the time a route reaches the payload layer; a forged cookie is
  * refused there, and the worst one could do to this key is claim its own
  * private memo slot.
+ *
+ * USE callerTagFromCtx WHEN THE VERIFIED CONTEXT IS AVAILABLE. This cookie
+ * parser is a fallback for callers that have not yet resolved the session --
+ * it under-segments in the presence of a forged cookie claiming to be a
+ * citizen of a real building, which is the cache-poisoning shape the
+ * CallerContext-aware version is the fix for.
  */
 export function callerTagFromCookie(cookieHeader: string | null): string {
   if (!cookieHeader) return 'anon';
@@ -59,4 +67,35 @@ export function callerTagFromCookie(cookieHeader: string | null): string {
   } catch {
     return 'anon';
   }
+}
+
+/**
+ * The verified identity, expressed as a memo key.
+ *
+ * This is the tag the response cache actually uses. It carries the same
+ * claims as callerTagFromCookie -- (slug, buildingId, floor, unit) for a
+ * citizen, the role for everyone else -- but sourced from the *verified*
+ * CallerContext, not from the raw cookie.
+ *
+ * WHY THE DIFFERENCE MATTERS. With callerTagFromCookie as the key, a
+ * request whose signature fails to verify (verified ctx === 'anon') is
+ * cached under whatever the forged cookie claimed. An attacker who knows
+ * a real citizen's (slug, buildingId, floor, unit) -- all four are in
+ * every building response and in devtools -- can flood the endpoint
+ * with that forged claim; the verified handler builds the FULL body (no
+ * citizen filter, because the verified ctx is anon); the full body lands
+ * in the memo under the citizen's key. The real citizen's next request
+ * hits the cache and reads the full, unfiltered document. They see every
+ * neighbour's ULPIN, name, encumbrance.
+ *
+ * The fix is to use the verified identity, which is what this function
+ * returns. A request whose signature fails to verify has ctx.kind ===
+ * 'anon' and lands in the 'anon' bucket; a real citizen lands in their
+ * own bucket; the two do not collide.
+ */
+export function callerTagFromCtx(ctx: CallerContext): string {
+  if (ctx.kind === 'citizen') {
+    return `citizen:${ctx.slug}:${ctx.buildingId}:${ctx.floor}:${ctx.unit}`;
+  }
+  return ctx.kind;
 }

@@ -11,6 +11,21 @@
 // sign-in and nothing in the auth path is bypassed. A citizen session:
 //
 //   node --experimental-strip-types scripts/mint_session.mjs --citizen
+//
+// Refuses to run against a production deployment. The script reads
+// SESSION_SECRET from the same sources the server does, so the printed cookie
+// is a REAL session for whatever environment the env points at. A developer
+// who runs this against a production .env.local -- or a CI step that shares
+// env with staging -- would mint a real gov cookie for prod. NODE_ENV=production
+// is the only signal that script-side: skip the gate and the rest is up to
+// the operator.
+if (process.env.NODE_ENV === 'production') {
+  console.error('mint_session.mjs refuses to run under NODE_ENV=production; '
+    + 'a signed session cookie printed by this script would be a real '
+    + 'production session.');
+  process.exit(2);
+}
+
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

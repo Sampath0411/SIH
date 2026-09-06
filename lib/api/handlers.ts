@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server';
+import { callerTagFromCtx } from '@/lib/http/caller-tag';
 import {
   backend, getBuildingDetail, getBuildings, getParcels,
   getRoads, getUtilities,
 } from '@/lib/db';
-import { applyEdit } from '@/lib/data/edits';
+import { applyEdit, editsRev } from '@/lib/data/edits';
 import { coerceEdit, validateEdit, warningsFor } from '@/lib/data/building-schema';
 import { resolveProject, unavailableMessage } from '@/lib/projects';
-import { editsRev } from '@/lib/data/edits';
 import { jsonPayload } from '@/lib/http/payload';
 import { warmProject } from '@/lib/server-cache';
 import {
@@ -48,6 +48,22 @@ async function baseHeaders(slug: string): Promise<Record<string, string>> {
     'x-ulpin-backend': await backend(slug),
     'x-ulpin-project': slug,
   };
+}
+
+/**
+ * 500-error body builder.
+ *
+ * The bare `String(err)` was the previous shape and it leaks DB host/port,
+ * the file path that failed to read, and the SQL query that errored. The
+ * detail is logged server-side and the body the caller sees carries no
+ * information that would help an attacker. The 200 path is byte-identical
+ * to before -- this only touches catch blocks, and the response code on
+ * the 500 path is the only thing a passing acceptance script ever
+ * matched against.
+ */
+function errorResponse(label: string, err: unknown): NextResponse {
+  console.error(`[ulpin-api] ${label}:`, err);
+  return NextResponse.json({ error: label }, { status: 500 });
 }
 
 /**
@@ -141,12 +157,12 @@ async function serve<T extends GeoFC>(
       resource: `${slug}:${what}`,
       rev: String(editsRev(slug)),
       headers: { ...(await baseHeaders(slug)), ...extra },
+      // VERIFIED caller tag, not the raw cookie. See lib/http/caller-tag.ts
+      // for the cache-poisoning shape the unverified version allows.
+      callerTag: callerTagFromCtx(ctx),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: `failed to load ${what}`, detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse(`failed to load ${what}`, err);
   }
 }
 
@@ -252,12 +268,10 @@ export async function sitesRoute(slug: string, req: Request) {
       resource: `${slug}:sites`,
       rev: String(editsRev(slug)),
       headers: await baseHeaders(slug),
+      callerTag: callerTagFromCtx(ctx),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to load sites', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to load sites', err);
   }
 }
 
@@ -287,12 +301,10 @@ export async function siteSpecRoute(slug: string, siteId: string, req: Request) 
       resource: `${slug}:site:${siteId}`,
       rev: String(editsRev(slug)),
       headers: await baseHeaders(slug),
+      callerTag: callerTagFromCtx(ctx),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to load site', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to load site', err);
   }
 }
 
@@ -312,12 +324,10 @@ export async function conflictsRoute(slug: string, req: Request) {
       resource: `${slug}:conflicts`,
       rev: String(editsRev(slug)),
       headers: withCacheHeader(await baseHeaders(slug), cache),
+      callerTag: callerTagFromCtx(ctx),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to load conflicts', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to load conflicts', err);
   }
 }
 
@@ -377,12 +387,10 @@ export async function buildingDetailRoute(
       resource: `${slug}:building:${id}`,
       rev: String(editsRev(slug)),
       headers: withCacheHeader(await baseHeaders(slug), cache),
+      callerTag: callerTagFromCtx(ctx),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to load building', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to load building', err);
   }
 }
 
@@ -451,13 +459,11 @@ export async function buildingSummaryRoute(
         resource: `${slug}:building-summary:${id}`,
         rev: String(editsRev(slug)),
         headers: withCacheHeader(await baseHeaders(slug), cache),
+        callerTag: callerTagFromCtx(ctx),
       },
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to load building', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to load building', err);
   }
 }
 
@@ -487,12 +493,10 @@ export async function buildingFloorsRoute(
       resource: `${slug}:building-floors:${id}`,
       rev: String(editsRev(slug)),
       headers: withCacheHeader(await baseHeaders(slug), cache),
+      callerTag: callerTagFromCtx(ctx),
     });
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to load floors', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to load floors', err);
   }
 }
 
@@ -564,13 +568,11 @@ export async function buildingUnitsRoute(
         resource: `${slug}:building-units:${id}:${level ?? 'all'}:${offset}:${limit}`,
         rev: String(editsRev(slug)),
         headers: withCacheHeader(await baseHeaders(slug), cache),
+        callerTag: callerTagFromCtx(ctx),
       },
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to load units', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to load units', err);
   }
 }
 
@@ -671,10 +673,7 @@ export async function buildingPatchRoute(
       },
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: 'failed to save building', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('failed to save building', err);
   }
 }
 
@@ -754,9 +753,6 @@ export async function queryRoute(slug: string, req: Request): Promise<NextRespon
       },
     );
   } catch (err) {
-    return NextResponse.json(
-      { error: 'query failed', detail: String(err) },
-      { status: 500 },
-    );
+    return errorResponse('query failed', err);
   }
 }

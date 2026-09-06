@@ -1,7 +1,8 @@
 import { brotliCompress, gzip, constants as zlibConstants } from 'node:zlib';
 import { promisify } from 'node:util';
 import { NextResponse } from 'next/server';
-import { callerTagFromCookie } from './caller-tag';
+import { callerTagFromCookie, callerTagFromCtx } from './caller-tag';
+import type { CallerContext } from '@/lib/auth/access-pure';
 
 /**
  * Compressed, cacheable JSON responses for the cadastre endpoints.
@@ -171,6 +172,14 @@ export interface JsonPayloadOptions {
    * does the user must not be looking at yesterday's parcels for an hour.
    */
   cacheControl?: string;
+  /**
+   * The verified caller's identity. Used as the memo key, so a citizen never
+   * shares a cache entry with anon or with another citizen. Optional for
+   * backward compat: when omitted, falls back to callerTagFromCookie, which
+   * is a security-relevant downgrade -- callers that have already resolved
+   * the session MUST pass this. See lib/http/caller-tag.ts for the rationale.
+   */
+  callerTag?: string;
 }
 
 const DEFAULT_CACHE_CONTROL = 'private, max-age=60, stale-while-revalidate=600';
@@ -185,15 +194,12 @@ export async function jsonPayload(
   opts: JsonPayloadOptions,
 ): Promise<NextResponse> {
   const encoding = negotiate(req);
-  // The cache key includes a CALLER tag derived from the request's session
-  // cookie: not just the role, but every session claim the role filters read.
-  // Citizens and gov see different collections on the same URL, and two
-  // citizens see different ones from each other -- see callerTagFromCookie for
-  // what happened when the tag was the bare role. Anon and gov see the same
-  // data, but splitting them anyway costs one memo slot and keeps the key
-  // shape uniform (the session is the only free input the user brings to a
-  // GET).
-  const callerTag = callerTagFromCookie(req.headers.get('cookie'));
+  // The cache key carries a caller tag. Prefer the verified identity
+  // (callerTag option) over the raw cookie: a forged cookie claiming to be
+  // a citizen of a real building would otherwise let the attacker prime
+  // the memo with the unfiltered body, which the next real citizen of that
+  // building would then read. See lib/http/caller-tag.ts.
+  const callerTag = opts.callerTag ?? callerTagFromCookie(req.headers.get('cookie'));
   const key = `${opts.resource}:${encoding}:${callerTag}`;
 
   let entry = take(key, opts.rev);

@@ -31,7 +31,7 @@ const { encodeSession, decodeSession, makeCitizenSession, makeGovSession,
 const { checkBuildingAccess, checkMutation, checkProjectAccess,
   isMutator, ownsUnit, filterDetailForCaller, callerContext: _cc } =
   await import('../lib/auth/access-pure.ts');
-const { callerTagFromCookie } = await import('../lib/http/caller-tag.ts');
+const { callerTagFromCookie, callerTagFromCtx } = await import('../lib/http/caller-tag.ts');
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -224,6 +224,109 @@ await test('callerTagFromCookie: gov and anon are distinct and stable', () => {
     callerTagFromCookie(cookieFor({ role: 'gov' })),
     callerTagFromCookie(cookieFor({ role: 'citizen', slug: 's', buildingId: 1, floor: 0, unit: 'a' })),
   );
+});
+
+// ---- verified-ctx key (cache poisoning defence) -----------------------------
+//
+// The cookie-derived tag was the source of a documented cache-poisoning
+// shape: an attacker who knows a real citizen's (slug, buildingId, floor,
+// unit) can flood the endpoint with a forged claim, the verified handler
+// builds the FULL body (verified ctx is 'anon', no filter applies), and
+// the FULL body lands in the memo under the citizen's key. The verified
+// ctx the cadastre handlers now pass to jsonPayload closes this:
+// anonymous traffic gets the 'anon' bucket regardless of the cookie's
+// claim, and a real citizen gets their own bucket regardless of what
+// cookies anyone else in the world sends.
+
+await test('callerTagFromCtx: anon and gov resolve to one bucket each', () => {
+  assert.equal(callerTagFromCtx({ kind: 'anon' }), 'anon');
+  assert.equal(callerTagFromCtx({ kind: 'gov' }), 'gov');
+  // Two anon contexts are the same bucket. Two gov contexts are the same
+  // bucket. The role is the only input that matters for non-citizens.
+  assert.equal(callerTagFromCtx({ kind: 'anon' }), callerTagFromCtx({ kind: 'anon' }));
+  assert.equal(callerTagFromCtx({ kind: 'gov' }), callerTagFromCtx({ kind: 'gov' }));
+});
+
+await test('callerTagFromCtx: two citizens get distinct buckets even if their claims collide on one field', () => {
+  const ravi  = { kind: 'citizen', slug: 'siripuram', buildingId: 999, floor: 2, unit: '201' };
+  const priya = { kind: 'citizen', slug: 'siripuram', buildingId: 999, floor: 5, unit: '502' };
+  // Same project, same building, different flat. Different buckets.
+  assert.notEqual(callerTagFromCtx(ravi), callerTagFromCtx(priya));
+  // Same flat, different project. Different buckets.
+  const other = { kind: 'citizen', slug: 'hyderabad-banjara', buildingId: 999, floor: 2, unit: '201' };
+  assert.notEqual(callerTagFromCtx(ravi), callerTagFromCtx(other));
+  // Same identity twice is the same bucket, or the memo would never hit.
+  assert.equal(callerTagFromCtx(ravi), callerTagFromCtx(ravi));
+});
+
+await test('callerTagFromCtx: a forged cookie does NOT poison a real citizen\'s bucket', () => {
+  // Forged cookie claiming to be Ravi, with a junk signature. callerTagFromCookie
+  // would still return "citizen:siripuram:999:2:201" for this string -- which is
+  // the same key the real Ravi's responses cache under. That's the leak.
+  //
+  // The verified ctx for the forged request is 'anon' (the signature is
+  // invalid, the cookie is not trusted). callerTagFromCtx therefore returns
+  // 'anon', which is the bucket for the FULL body and is the bucket the
+  // forged request was always going to land in. The real Ravi's bucket
+  // (citizen:siripuram:999:2:201) is not affected.
+  const forgedCookie = cookieFor({
+    role: 'citizen', slug: 'siripuram', buildingId: 999, floor: 2, unit: '201',
+  }) + '.forged';
+  // The cookie-derived tag is the same for the forged string and the real one.
+  const raviReal = cookieFor({
+    role: 'citizen', slug: 'siripuram', buildingId: 999, floor: 2, unit: '201',
+  });
+  assert.equal(callerTagFromCookie(forgedCookie), callerTagFromCookie(raviReal),
+    'the cookie parser is intentionally format-based and cannot tell these apart');
+  // The verified tag is not. The forged request's verified ctx is anon;
+  // the real one's is the citizen bucket.
+  const verifiedForged = callerTagFromCtx({ kind: 'anon' });
+  const verifiedReal = callerTagFromCtx({
+    kind: 'citizen', slug: 'siripuram', buildingId: 999, floor: 2, unit: '201',
+  });
+  assert.equal(verifiedForged, 'anon');
+  assert.notEqual(verifiedForged, verifiedReal,
+    'forged request and real citizen must NOT share a cache key');
+});
+
+// ---- sliding-cap on session total age --------------------------------------
+//
+// The 24h sliding window used to keep refreshing a token forever as long as
+// the holder was active. The fix caps the new exp at claims.iat + 30d, so a
+// session older than the cap expires on schedule regardless of activity.
+// The cookie's wall-clock Max-Age is then the lesser of the two.
+
+await test('buildSetCookie: a session older than the 30d cap is no longer refreshable', () => {
+  // 31 days ago. claims.iat + 30d is one day in the past, so a refresh
+  // would push newExp back to "now" -- which would let a leaked token
+  // keep going forever. The fix clamps newExp to claims.iat + 30d, so
+  // the rebuilt cookie's Max-Age is whatever is left of that.
+  const now = Date.now();
+  const day = 24 * 60 * 60 * 1000;
+  const old = makeCitizenSession({
+    aadhar: '111122223333', name: 'Ravi Kumar', slug: 'siripuram',
+    buildingId: 999, floor: 2, unit: '201', ttlMs: 30 * day,
+  });
+  // Synthesise the 31-day-old claims by hand: iat in the past, exp in the past.
+  const ancient = { ...old, iat: now - 31 * day, exp: now - 1 * day };
+  const cookie = buildSetCookie(ancient);
+  // The rebuilt Max-Age must be 0 (exp is in the past) and never claims
+  // a fresh 24h TTL on a token the cap has already retired.
+  const m = /Max-Age=(\d+)/.exec(cookie);
+  assert.ok(m, 'Max-Age must be present');
+  const maxAge = Number(m[1]);
+  assert.ok(maxAge <= 0, `expected Max-Age=0 for a 31-day-old session, got ${maxAge}`);
+});
+
+await test('buildSetCookie: a fresh session refreshes to a 24h Max-Age', () => {
+  const fresh = makeGovSession({ email: 'admin@sampath.gov.in', name: 'Admin' });
+  const cookie = buildSetCookie(fresh);
+  const m = /Max-Age=(\d+)/.exec(cookie);
+  assert.ok(m, 'Max-Age must be present');
+  const maxAge = Number(m[1]);
+  // Within 24h, but allow a few seconds of skew.
+  assert.ok(maxAge > 23 * 3600 && maxAge <= 24 * 3600,
+    `expected ~24h Max-Age for a fresh session, got ${maxAge}`);
 });
 
 // ---- unit-level filtering on the real detail snapshot ----------------------

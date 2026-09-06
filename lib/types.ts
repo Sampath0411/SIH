@@ -306,6 +306,21 @@ export interface ConflictRow {
 export interface StackHit {
   level: 'parcel' | 'building' | 'floor' | 'unit';
   id: number;
+  /**
+   * The building this hit belongs to, for `level` in {building, floor, unit}.
+   * Null only for `parcel`, which is the level ABOVE the building. The field
+   * is the join that lets a click on a flat tell the DetailPanel which
+   * building the panel should describe -- without it, a PostGIS-resident
+   * citizen could not tell where they had clicked: a unit id is opaque
+   * across projects, the building id is not.
+   *
+   * Carried on every level rather than computed by the consumer because
+   * that is the contract /api/query already publishes for building; the
+   * floor and unit rows had no way to say it, and a panel that had to
+   * look it up in a second query would race the very edit it was
+   * describing.
+   */
+  building_id: number | null;
   ulpin: string;
   label: string;
   z_min: number | null;

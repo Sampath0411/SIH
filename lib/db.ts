@@ -518,13 +518,13 @@ function querySql(scope: Scope, lon: number, lat: number, z: number) {
     sql: `
   WITH pt AS (SELECT ST_SetSRID(ST_MakePoint($1,$2,$3),4326) AS g,
                      ST_SetSRID(ST_MakePoint($1,$2),4326)    AS g2)
-  SELECT s.level, s.id, s.ulpin, s.label, s.z_min, s.z_max, s.provenance
+  SELECT s.level, s.id, s.building_id, s.ulpin, s.label, s.z_min, s.z_max, s.provenance
   FROM (
-    SELECT 'parcel' AS level, p.id, p.ulpin, p.owner AS label,
+    SELECT 'parcel' AS level, p.id, NULL::bigint AS building_id, p.ulpin, p.owner AS label,
            NULL::float8 AS z_min, NULL::float8 AS z_max, NULL::text AS provenance
       FROM parcel p, pt WHERE ST_Intersects(p.geom, pt.g2) ${parcelF}
     UNION ALL
-    SELECT 'building', b.id, b.ulpin,
+    SELECT 'building', b.id, b.id, b.ulpin,
            COALESCE(b.name, initcap(b.use_type) || ' building'),
            b.ground_elev, b.ground_elev + b.height_m, b.height_source
       FROM building b, pt
@@ -532,11 +532,11 @@ function querySql(scope: Scope, lon: number, lat: number, z: number) {
        AND $3 BETWEEN b.ground_elev - b.basements * 3.2 AND b.ground_elev + b.height_m
        ${buildingF}
     UNION ALL
-    SELECT 'floor', f.id, f.ulpin, 'Level ' || f.level_no, f.z_min, f.z_max, f.detect_source
+    SELECT 'floor', f.id, f.building_id, f.ulpin, 'Level ' || f.level_no, f.z_min, f.z_max, f.detect_source
       FROM floor f ${floorJoin}, pt
      WHERE f.geom && pt.g2 AND ST_3DIntersects(ST_MakeSolid(f.geom), pt.g)
     UNION ALL
-    SELECT 'unit', u.id, u.ulpin, u.unit_no, u.z_min, u.z_max, NULL
+    SELECT 'unit', u.id, ub.id, u.ulpin, u.unit_no, u.z_min, u.z_max, NULL
       FROM unit u ${unitJoin}, pt
      WHERE u.geom_3d && pt.g2 AND ST_3DIntersects(ST_MakeSolid(u.geom_3d), pt.g)
   ) s
@@ -1066,7 +1066,8 @@ async function queryPointFromSnapshot(
   for (const f of parcels.features) {
     if (inRing(firstRing(f.geometry), lon, lat)) {
       out.push({
-        level: 'parcel', id: f.properties.id, ulpin: f.properties.ulpin,
+        level: 'parcel', id: f.properties.id, building_id: null,
+        ulpin: f.properties.ulpin,
         label: f.properties.owner, z_min: null, z_max: null, provenance: null,
       });
     }
@@ -1081,7 +1082,8 @@ async function queryPointFromSnapshot(
 
     const fallbackLabel = p.use_type.charAt(0).toUpperCase() + p.use_type.slice(1) + ' building';
     out.push({
-      level: 'building', id: p.id, ulpin: p.ulpin, label: p.name ?? fallbackLabel,
+      level: 'building', id: p.id, building_id: p.id, ulpin: p.ulpin,
+      label: p.name ?? fallbackLabel,
       z_min: p.ground_elev, z_max: zTop,
       provenance: p.height_source as StackHit['provenance'],
     });
@@ -1091,7 +1093,8 @@ async function queryPointFromSnapshot(
     for (const fl of detail.floors) {
       if (z >= fl.z_min && z <= fl.z_max) {
         out.push({
-          level: 'floor', id: fl.id, ulpin: fl.ulpin, label: `Level ${fl.level_no}`,
+          level: 'floor', id: fl.id, building_id: p.id, ulpin: fl.ulpin,
+          label: `Level ${fl.level_no}`,
           z_min: fl.z_min, z_max: fl.z_max, provenance: fl.detect_source,
         });
       }
@@ -1099,7 +1102,8 @@ async function queryPointFromSnapshot(
     for (const u of detail.units) {
       if (z >= u.z_min && z <= u.z_max && inRing(firstRing(u.ring), lon, lat)) {
         out.push({
-          level: 'unit', id: u.id, ulpin: u.ulpin ?? '', label: u.unit_no,
+          level: 'unit', id: u.id, building_id: p.id, ulpin: u.ulpin ?? '',
+          label: u.unit_no,
           z_min: u.z_min, z_max: u.z_max, provenance: null,
         });
       }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
   buildClearCookie,
+  isHttpsRequest,
   revokeSession,
   sessionFromCookieHeader,
 } from '@/lib/auth/session';
@@ -26,7 +27,7 @@ export async function POST(req: Request) {
   }
   return NextResponse.json(
     { ok: true },
-    { headers: { 'set-cookie': buildClearCookie() } },
+    { headers: { 'set-cookie': buildClearCookie({ secure: isHttpsRequest(req) }) } },
   );
 }
 

@@ -41,6 +41,19 @@ import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 
 const COOKIE_NAME = 'ulpin_session';
 const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24h sliding
+/**
+ * Hard ceiling on a session's TOTAL lifetime, regardless of how often the
+ * user is active. The 24h sliding window can keep refreshing a token forever;
+ * this prevents that. A stolen cookie whose holder continues to be active is
+ * still a stolen cookie, and the longer it lives the more the user has to
+ * lose when it is rotated by the org or invalidated by a logout-everywhere.
+ *
+ * 30 days is the cap: long enough to be invisible to a normal user who
+ * closes the browser for a weekend, short enough to bound the blast radius of
+ * a leak. Lengthening it is a judgement call that goes into the decisions
+ * log, not a number to bump.
+ */
+const MAX_SESSION_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
 export type Role = 'citizen' | 'gov';
 
@@ -76,6 +89,18 @@ function getSecret(): Buffer {
   const fromEnv = process.env.SESSION_SECRET;
   if (fromEnv && fromEnv.length >= 16) {
     _secret = Buffer.from(fromEnv, 'utf-8');
+  } else if (process.env.NODE_ENV === 'production') {
+    // A missing SESSION_SECRET in production is a SIGN-IN LOOP WAITING TO
+    // HAPPEN. Every cold-started Vercel instance signs with its own random
+    // key; the next request may be served by a different instance that
+    // cannot verify the previous one, and the user lands on /login with no
+    // error. Refuse to start the request handler in that case rather than
+    // letting it present as "wrong password".
+    throw new Error(
+      'SESSION_SECRET is required in production (NODE_ENV=production). '
+      + 'Set it to a high-entropy string of at least 16 characters. '
+      + 'See .env.example.',
+    );
   } else {
     // Dev-only: random per process. A real deployment sets SESSION_SECRET.
     // Documented at the top of the file; not a bug, not a backdoor.
@@ -236,8 +261,24 @@ export function buildSetCookie(
   claims: SessionClaims,
   opts: { secure?: boolean; sameSite?: 'Lax' | 'Strict' | 'None' } = {},
 ): string {
-  const value = encodeSession(claims);
-  const remaining = Math.max(0, Math.floor((claims.exp - Date.now()) / 1000));
+  // Sliding refresh, but CAPPED at the original iat + MAX_SESSION_AGE_MS.
+  //
+  // The reason this matters: without the cap, every /api/me call advances
+  // claims.exp by the full 24h, so a token that has been circulating for
+  // 11 months is still "fresh" so long as the holder visits once a day.
+  // The cookie is HMAC-signed, so it cannot be tampered with, but a leak
+  // is a leak and the longer a leaked cookie is valid the more the
+  // holder has to lose when it is later revoked. We refresh the wall
+  // clock to "now + TTL" only as long as the absolute age stays within
+  // the cap; past that we keep the existing exp, which is strictly less
+  // useful to the user (the cookie expires on schedule) and strictly
+  // safer for everyone else.
+  const now = Date.now();
+  const absoluteCeiling = claims.iat + MAX_SESSION_AGE_MS;
+  const slidingCeiling = now + DEFAULT_TTL_MS;
+  const newExp = Math.min(claims.exp, slidingCeiling, absoluteCeiling);
+  const value = encodeSession(newExp === claims.exp ? claims : { ...claims, exp: newExp });
+  const remaining = Math.max(0, Math.floor((newExp - now) / 1000));
   const parts = [
     `${COOKIE_NAME}=${encodeURIComponent(value)}`,
     'Path=/',
@@ -269,9 +310,19 @@ export function isHttpsRequest(req: Request): boolean {
   }
 }
 
-/** Clear the session cookie. */
-export function buildClearCookie(): string {
-  return `${COOKIE_NAME}=; Path=/; HttpOnly; Max-Age=0; SameSite=Lax`;
+/** Clear the session cookie. `secure` is set on HTTPS so the browser
+ *  drops the cookie regardless of protocol; the dev-server case (HTTP)
+ *  stays insecure so a clear-cookie on a plain-HTTP localhost still works. */
+export function buildClearCookie(opts: { secure?: boolean } = {}): string {
+  const parts = [
+    `${COOKIE_NAME}=`,
+    'Path=/',
+    'HttpOnly',
+    'Max-Age=0',
+    `SameSite=Lax`,
+  ];
+  if (opts.secure) parts.push('Secure');
+  return parts.join('; ');
 }
 
 /** Revoke a session id (in-memory only; for production, move to Redis). */
