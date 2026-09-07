@@ -67,7 +67,16 @@ interface ProviderEntry {
 }
 
 /**
- * `?api_key=...` for the CARTO basemaps, or the empty string.
+ * `?key=...` for the CARTO basemaps, or the empty string.
+ *
+ * The parameter is `key`, NOT `api_key`. The basemap CDN accepts `api_key`
+ * without complaint -- 200, a valid PNG -- and ignores it: the tile comes back
+ * byte-identical to the anonymous one, watermark and all, for a real key and a
+ * fabricated one alike. `key` is the name it actually reads. Verified over the
+ * Siripuram AOI on both styles: voyager 31961 B anonymous vs 35125 B keyed,
+ * dark_all 18027 B vs 20125 B, and a bogus `key` falls back to the watermarked
+ * bytes. Tiles stay CORS-open (`Access-Control-Allow-Origin: *`) either way, so
+ * this is a query-string change and nothing more.
  *
  * BOTH CARTO entries below take it, not only the new one. CARTO has begun
  * stamping "API KEY REQUIRED" diagonally across every anonymous basemap tile,
@@ -81,7 +90,7 @@ interface ProviderEntry {
  * correctly attributed and watermarked. No provider here requires a token.
  */
 function cartoKeyParam(): string {
-  return CARTO_API_KEY ? `?api_key=${encodeURIComponent(CARTO_API_KEY)}` : '';
+  return CARTO_API_KEY ? `?key=${encodeURIComponent(CARTO_API_KEY)}` : '';
 }
 
 /**
