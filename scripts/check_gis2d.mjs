@@ -20,11 +20,11 @@
  * Run it against BOTH backends -- `docker compose start` and `docker compose
  * stop` -- because the survey parcels have a PostGIS path and a snapshot path
  * and the whole point of the export is that they agree.
+ *
+ * Needs a signed session cookie, like the other browser checks here:
+ *   ULPIN_SESSION_COOKIE=$(node --experimental-strip-types scripts/mint_session.mjs)
  */
 import puppeteer from 'puppeteer-core';
-import {
-  PROTOCOL_TIMEOUT_MS, applySession, chromeArgs, reportBackend,
-} from './_chrome.mjs';
 import { mkdirSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { codesOf, generate, parse } from '../lib/ulpin.ts';
@@ -50,6 +50,24 @@ mkdirSync(OUT, { recursive: true });
 const BUILDING_COUNT = JSON.parse(
   readFileSync(path.join(API, 'buildings.json'), 'utf-8'),
 ).features.length;
+
+/** The viewer is auth-gated; without this every navigation lands on /login. */
+async function applySession(page, url) {
+  const value = process.env.ULPIN_SESSION_COOKIE;
+  if (!value) return;
+  const u = new globalThis.URL(url);
+  await page.setCookie({
+    name: 'ulpin_session', value, domain: u.hostname, path: '/',
+    httpOnly: true, sameSite: 'Lax',
+  });
+}
+
+/**
+ * puppeteer's default CDP timeout is 180 s and the waits below ask for up to
+ * 300 s, so the transport would abandon the call before the script's own
+ * deadline and report a misleading protocol error.
+ */
+const PROTOCOL_TIMEOUT_MS = 900000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let failures = 0;
@@ -139,13 +157,19 @@ const browser = await puppeteer.launch({
   executablePath: CHROME,
   headless: 'new',
   protocolTimeout: PROTOCOL_TIMEOUT_MS,
-  args: chromeArgs({ window: '1680,950' }),
+  args: [
+    '--use-gl=angle',
+    '--use-angle=swiftshader',
+    '--enable-unsafe-swiftshader',
+    '--hide-scrollbars',
+    '--no-sandbox',
+    '--window-size=1680,950',
+  ],
   defaultViewport: { width: 1680, height: 950 },
 });
 
 try {
   const page = await browser.newPage();
-  await reportBackend(page);
   await applySession(page, URL);
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });

@@ -168,44 +168,6 @@ export default function Legend() {
         </div>
       ) : null}
 
-      {/* What the four façade colours mean.
-          Keyed whenever the masses are on screen: at city scale the surface of
-          a building IS its use type, and a four-colour code with no key is a
-          code with no meaning. Suppressed underground (the masses are dimmed
-          to a tenth there and the strata key needs the space) and in Photoreal
-          (Google's mesh is photography, and none of these colours is on it).
-
-          Counted from the loaded data rather than written down, like the
-          provenance key above: a use type that does not occur in this project
-          is not offered as if it did. Every swatch sets its colour INLINE --
-          scripts/shoot.mjs's chrome audit fails a coloured element inside a
-          panel unless it does, which is exactly the data-swatch exemption. */}
-      {showBuildings && !underground && buildingStyle !== 'photoreal' && useCounts.size > 0 ? (
-        <div className="mt-2 border-t border-[rgb(var(--edge))]/50 pt-2">
-          <div className="panel-title">Building use</div>
-          <div className="mt-1.5 space-y-1">
-            {USE_ORDER.filter((u) => useCounts.has(u)).map((u) => (
-              <div key={u} className="flex items-center gap-2">
-                <span
-                  className="h-2 w-4 shrink-0 rounded-sm ring-1 ring-[rgb(var(--edge-strong))]"
-                  style={{ background: USE_WALL_HEX[u] }}
-                />
-                <span className="flex-1 text-[11px] text-[rgb(var(--ink))]">
-                  {USE_TYPE_LABEL[u]}
-                </span>
-                <span className="font-mono text-[10px] text-[rgb(var(--muted))]">
-                  {useCounts.get(u)}
-                </span>
-              </div>
-            ))}
-          </div>
-          <p className="mt-1.5 text-[9px] leading-snug text-[rgb(var(--muted))]">
-            Façade colour and window pattern are drawn from the use type; they
-            are illustrative, not a photograph of the building.
-          </p>
-        </div>
-      ) : null}
-
       {/* Streets are keyed only when they are on screen and there is no
           underground view competing for the space. */}
       {showRoads && !underground && (roads?.features.length ?? 0) > 0 ? (
