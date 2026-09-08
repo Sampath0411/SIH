@@ -13,6 +13,9 @@ import { createBucketGrid, extentOf } from '@/lib/cesium/spatial-buckets';
 import { flatLonLat, orientedDims } from '@/lib/geo';
 import type { ParcelInfo } from '@/lib/types';
 
+/** Hatch canvas -> the one ImageMaterialProperty every parcel using it shares. */
+const hatchMaterials = new WeakMap<HTMLCanvasElement, Cesium.ImageMaterialProperty>();
+
 /**
  * Surface parcel polygons, clamped to the terrain.
  *
@@ -124,13 +127,19 @@ export default function ParcelsLayer() {
       // small hatch canvas across the polygon.
       const dims = orientedDims(ring);
       const hatch = plotHatch(pid, dims.longAxisDeg);
+      // One material object per hatch canvas, shared by every parcel that
+      // draws it: Cesium batches ground polygons per distinct material, so
+      // sharing is what lets the ~1,600 hatches collapse into a few dozen
+      // primitives instead of one each.
+      let hatchMaterial = hatchMaterials.get(hatch);
+      if (!hatchMaterial) {
+        hatchMaterial = new Cesium.ImageMaterialProperty({ image: hatch, transparent: true });
+        hatchMaterials.set(hatch, hatchMaterial);
+      }
       ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
-          material: new Cesium.ImageMaterialProperty({
-            image: hatch,
-            transparent: true,
-          }),
+          material: hatchMaterial,
           classificationType: Cesium.ClassificationType.BOTH,
           outline: false,
           shadows: Cesium.ShadowMode.DISABLED,

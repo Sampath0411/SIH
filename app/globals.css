@@ -264,6 +264,10 @@ input[type='range']:disabled::-moz-range-thumb { background: rgb(var(--muted-2))
   bottom: var(--credit-bottom, 34px) !important;
   left: 8px !important;
   z-index: 30;
+  /* Hidden at the owner's request (2026-09-08). The credit strings are still
+     in the DOM and the data-source notice in the status bar still names the
+     providers; remove this one line to show the container again. */
+  display: none !important;
 }
 
 /*

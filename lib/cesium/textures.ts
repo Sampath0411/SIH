@@ -93,14 +93,25 @@ export function windowGrid(
  * that survives both the dark treatment and Esri imagery underneath, without
  * competing with the building fills on top of it.
  *
- * Keyed by parcel id so each parcel keeps its own rotation; the canvas is
- * tiny (64 px) and repeated across the polygon by Cesium's default 1:1 UV.
+ * Keyed by the QUANTISED rotation, not by parcel id. Cesium batches ground
+ * polygons per distinct material, and ImageMaterialProperty.equals compares
+ * the image by reference -- so one canvas per parcel meant one primitive per
+ * parcel (1,634 draw calls and 1,634 GPU textures for a texture nobody can
+ * tell apart at 5° steps). Snapping the angle to HATCH_STEP_DEG collapses
+ * that to at most 36 canvases, and parcels sharing a canvas share a batch.
+ * The canvas is tiny (64 px) and repeated across the polygon by Cesium's
+ * default 1:1 UV.
  */
+const HATCH_STEP_DEG = 5;
 const hatchCache = new Map<number, HTMLCanvasElement>();
 
-export function plotHatch(parcelId: number, longAxisDeg: number): HTMLCanvasElement {
-  const cached = hatchCache.get(parcelId);
+export function plotHatch(_parcelId: number, longAxisDeg: number): HTMLCanvasElement {
+  // A hatch is symmetric under a half turn, so fold the angle into [0, 180).
+  const folded = ((longAxisDeg % 180) + 180) % 180;
+  const key = Math.round(folded / HATCH_STEP_DEG) % Math.round(180 / HATCH_STEP_DEG);
+  const cached = hatchCache.get(key);
   if (cached) return cached;
+  longAxisDeg = key * HATCH_STEP_DEG;
 
   const size = 64;
   const canvas = document.createElement('canvas');
@@ -126,7 +137,7 @@ export function plotHatch(parcelId: number, longAxisDeg: number): HTMLCanvasElem
   }
   ctx.restore();
 
-  hatchCache.set(parcelId, canvas);
+  hatchCache.set(key, canvas);
   return canvas;
 }
 

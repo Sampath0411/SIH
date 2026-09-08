@@ -225,13 +225,9 @@ const CORES = [
     unit_no: 'EV',
     frac: [0.47, 0.30, 0.53, 0.47],
   },
-  {
-    kind: 'stair',
-    core_ref: 'ST1',
-    label: 'Emergency Staircase Core',
-    unit_no: 'ST',
-    frac: [0.47, 0.53, 0.53, 0.70],
-  },
+  // The emergency staircase core (ST1, x 0.47-0.53, y 0.53-0.70) was removed
+  // at the owner's request. The corridor arm it stood in stays empty; the
+  // parking banks below still leave the whole 0.47-0.53 strip clear.
 ];
 
 /**

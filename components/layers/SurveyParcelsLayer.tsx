@@ -131,12 +131,12 @@ export default function SurveyParcelsLayer() {
           positions: Cesium.Cartesian3.fromDegreesArray(flat),
           clampToGround: true,
           classificationType: Cesium.ClassificationType.BOTH,
-          width: new Cesium.CallbackProperty(() => {
-            const s = stateRef.current;
-            return s.activeId === pid || s.hoveredId === pid
-              ? SURVEY_PARCEL_VIEW.OUTLINE_ACTIVE_PX
-              : SURVEY_PARCEL_VIEW.OUTLINE_PX;
-          }, false),
+          // A plain number, never a CallbackProperty: a non-constant width
+          // puts the polyline on Cesium's DYNAMIC updater, which rebuilt every
+          // one of these ground polylines synchronously on every frame the 2D
+          // view was open (the trap RoadsLayer documents). The wider stroke
+          // for the hovered or selected plot is a single halo entity below.
+          width: SURVEY_PARCEL_VIEW.OUTLINE_PX,
           material: new Cesium.ColorMaterialProperty(
             new Cesium.CallbackProperty(() => {
               const s = stateRef.current;
@@ -200,6 +200,47 @@ export default function SurveyParcelsLayer() {
     s.fadeTarget = gis2d ? 1 : 0;
     if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
   }, [activeId, hoveredId, gis2d, viewer]);
+
+  /**
+   * The wider boundary for the hovered and the selected plot: one halo entity
+   * each, created on demand, the RoadsLayer idiom. Width cannot change on a
+   * static polyline, so the emphasis is a separate line rather than a per-
+   * frame callback on every plot.
+   */
+  useEffect(() => {
+    if (!viewer || !ready || !parcels || !gis2d || viewer.isDestroyed()) return;
+    const ids = activeId === hoveredId ? [activeId] : [activeId, hoveredId];
+    const wanted = ids.filter((id): id is number => id !== null);
+    if (wanted.length === 0) return;
+
+    const ds = new Cesium.CustomDataSource('survey-parcel-halo');
+    viewer.dataSources.add(ds);
+    for (const id of wanted) {
+      const feature = parcels.features.find(
+        (f) => (f.properties as SurveyParcelProps).id === id,
+      );
+      if (!feature) continue;
+      const flat = flatLonLat((feature.geometry.coordinates as number[][][])[0]);
+      if (flat.length < 6) continue;
+      ds.entities.add({
+        polyline: {
+          positions: Cesium.Cartesian3.fromDegreesArray(flat),
+          width: SURVEY_PARCEL_VIEW.OUTLINE_ACTIVE_PX,
+          clampToGround: true,
+          classificationType: Cesium.ClassificationType.BOTH,
+          material: new Cesium.ColorMaterialProperty(
+            id === activeId ? MATERIALS.surveyParcelActive : MATERIALS.surveyParcelHover,
+          ),
+          zIndex: 2,
+        },
+      });
+    }
+    viewer.scene.requestRender();
+
+    return () => {
+      if (!viewer.isDestroyed()) viewer.dataSources.remove(ds, true);
+    };
+  }, [viewer, ready, parcels, gis2d, activeId, hoveredId]);
 
   /**
    * One rAF loop for the whole layer, which parks itself once settled.

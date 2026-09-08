@@ -157,7 +157,7 @@ export const FLOOR_VIEW = {
    * capable GPU; the size here is what makes the glyphs comfortable once
    * they are actually sharp.
    */
-  LABEL_FONT: '700 17px ui-sans-serif, system-ui, sans-serif',
+  LABEL_FONT: '600 13px ui-sans-serif, system-ui, sans-serif',
   /**
    * Bay numbers: forty on a plate at 2.4 m centres, so small, tight, and
    * gone beyond LABEL_BAY_MAX_DISTANCE_M -- past that they overprint into
@@ -252,6 +252,14 @@ const USE_COLOR: Record<UseType, Cesium.Color> = {
  * late-afternoon sun this step and the cast shadow do the same job from
  * opposite directions, which is why neither has to be heavy-handed.
  */
+/** The four flat tints, built once. See MATERIALS.unitTint. */
+const UNIT_TINTS = [
+  Cesium.Color.fromBytes(205, 198, 186),  // warm sand
+  Cesium.Color.fromBytes(186, 200, 205),  // cool slate
+  Cesium.Color.fromBytes(196, 205, 188),  // pale sage
+  Cesium.Color.fromBytes(203, 190, 202),  // dusty mauve
+];
+
 const ROOF_COLOR: Record<UseType, Cesium.Color> = {
   residential: grey(216),
   commercial: grey(209),
@@ -342,12 +350,10 @@ export const MATERIALS = {
    * flat turns.
    */
   unitTint: (slot: number, alpha: number = FLOOR_VIEW.UNIT_ALPHA) => {
-    const tints = [
-      Cesium.Color.fromBytes(205, 198, 186),  // warm sand
-      Cesium.Color.fromBytes(186, 200, 205),  // cool slate
-      Cesium.Color.fromBytes(196, 205, 188),  // pale sage
-      Cesium.Color.fromBytes(203, 190, 202),  // dusty mauve
-    ];
+    // UNIT_TINTS lives at module scope: this runs inside a CallbackProperty
+    // for every flat on every rendered frame, and building the four colours
+    // fresh each call was five allocations per flat per frame.
+    const tints = UNIT_TINTS;
     return tints[((slot % tints.length) + tints.length) % tints.length].withAlpha(alpha);
   },
 
@@ -447,6 +453,8 @@ export const MATERIALS = {
 
   /** Unit code label on the isolated floor. */
   unitLabelFill: grey(250),
+  /** A flat's number: plain dark type straight on the top face, no pill. */
+  flatLabelInk: grey(16),
   unitLabelOutline: grey(0),
   /** The pill behind a unit code, and the brighter pill under the cursor. */
   unitLabelBg: grey(24, 0.82),

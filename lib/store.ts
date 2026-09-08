@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { create } from 'zustand';
 import type { LADMParcelDoc } from './ladm';
 import type { ProviderId, TreatmentId } from './cesium/imagery-catalog';
@@ -1067,21 +1067,29 @@ export function useActiveDetail(): BuildingDetail | null {
 // ---------------------------------------------------------------------------
 
 /** Other buildings on the same parcel as the active one. */
+const NO_BUILDINGS: EnrichedBuilding[] = [];
+const NO_CONFLICTS: ConflictRow[] = [];
+const NO_NEIGHBOURS: Array<{ b: EnrichedBuilding; distanceM: number }> = [];
+
 export function useParcelSiblings(activeBuildingId: number | null): EnrichedBuilding[] {
   const buildings = useDataStore((s) => s.buildings);
-  if (!buildings || activeBuildingId === null) return [];
-  const me = buildings.features.find((f) => f.properties.id === activeBuildingId)?.properties;
-  if (!me) return [];
-  return buildings.features
-    .map((f) => f.properties)
-    .filter((p) => p.parcel_id === me.parcel_id && p.id !== me.id);
+  return useMemo(() => {
+    if (!buildings || activeBuildingId === null) return NO_BUILDINGS;
+    const me = buildings.features.find((f) => f.properties.id === activeBuildingId)?.properties;
+    if (!me) return NO_BUILDINGS;
+    return buildings.features
+      .map((f) => f.properties)
+      .filter((p) => p.parcel_id === me.parcel_id && p.id !== me.id);
+  }, [buildings, activeBuildingId]);
 }
 
 /** Conflicts whose building matches the active selection. */
 export function useBuildingConflicts(activeBuildingId: number | null): ConflictRow[] {
   const conflicts = useDataStore((s) => s.conflicts);
-  if (activeBuildingId === null) return [];
-  return conflicts.filter((c) => c.building_id === activeBuildingId);
+  return useMemo(() => {
+    if (activeBuildingId === null) return NO_CONFLICTS;
+    return conflicts.filter((c) => c.building_id === activeBuildingId);
+  }, [conflicts, activeBuildingId]);
 }
 
 /** Other buildings within `radiusM` of the active centroid, sorted nearest first. */
@@ -1090,9 +1098,20 @@ export function useBuildingNeighbours(
   radiusM = 50,
 ): Array<{ b: EnrichedBuilding; distanceM: number }> {
   const buildings = useDataStore((s) => s.buildings);
-  if (!buildings || activeBuildingId === null) return [];
+  // Memoised: this walks every footprint's ring and is called from the
+  // DetailPanel, which re-renders on many unrelated store writes.
+  return useMemo(() => neighboursOf(buildings, activeBuildingId, radiusM),
+    [buildings, activeBuildingId, radiusM]);
+}
+
+function neighboursOf(
+  buildings: ReturnType<typeof useDataStore.getState>['buildings'],
+  activeBuildingId: number | null,
+  radiusM: number,
+): Array<{ b: EnrichedBuilding; distanceM: number }> {
+  if (!buildings || activeBuildingId === null) return NO_NEIGHBOURS;
   const me = buildings.features.find((f) => f.properties.id === activeBuildingId);
-  if (!me) return [];
+  if (!me) return NO_NEIGHBOURS;
   const myRing = (me.geometry.coordinates as number[][][])[0];
   const { lon: mLon, lat: mLat } = (() => {
     const n = Math.max(1, myRing.length - 1);
@@ -1130,7 +1149,12 @@ export type { UtilityProps };
  * this without breaking the "layers read, picker/UI write" rule.
  */
 export function useEnsureDetail(id: number | null): BuildingDetail | null {
-  const detail = useDataStore((s) => s.detail);
+  // THIS building's document, not the whole cache record. putDetail replaces
+  // the record on every arrival, so subscribing to it re-rendered all six
+  // callers of this hook (the DetailPanel among them) whenever ANY building's
+  // document landed. Selecting the one entry means zustand compares the same
+  // object to itself and stays quiet.
+  const doc = useDataStore((s) => (id === null ? null : s.detail[id] ?? null));
   /**
    * Whether THIS id is cached, as a boolean.
    *
@@ -1205,13 +1229,14 @@ export function useEnsureDetail(id: number | null): BuildingDetail | null {
     };
   }, [id, slug, isCached]);
 
-  return id === null ? null : detail[id] ?? null;
+  return doc;
 }
 
 /** True while `/api/building/:id` is in flight. Distinct from "failed". */
 export function useDetailPending(id: number | null): boolean {
-  const pending = useDataStore((s) => s.pendingDetail);
-  return id === null ? false : Boolean(pending[id]);
+  // A primitive per id, for the same reason useEnsureDetail selects one
+  // document: beginDetail/endDetail replace the whole record.
+  return useDataStore((s) => id !== null && Boolean(s.pendingDetail[id]));
 }
 
 /** Give up on a Bhuvan lookup after this long; the panel never waits on it. */
@@ -1268,8 +1293,7 @@ export function useEnsureLulc(id: number | null, layer: string | null): LulcEntr
 
 /** True while the Bhuvan GetFeatureInfo for this building is in flight. */
 export function useLulcPending(id: number | null): boolean {
-  const pending = useDataStore((s) => s.pendingLulc);
-  return id === null ? false : Boolean(pending[id]);
+  return useDataStore((s) => id !== null && Boolean(s.pendingLulc[id]));
 }
 
 
@@ -1360,10 +1384,11 @@ export const useEditStore = create<EditState>((set) => ({
 
 /** True when the given building has unsaved changes. */
 export function useIsDirty(id: number | null): boolean {
-  const drafts = useEditStore((s) => s.drafts);
-  if (id === null) return false;
-  const d = drafts[id];
-  return Boolean(d && Object.keys(d).length > 0);
+  return useEditStore((s) => {
+    if (id === null) return false;
+    const d = s.drafts[id];
+    return Boolean(d && Object.keys(d).length > 0);
+  });
 }
 
 // ---------------------------------------------------------------------------

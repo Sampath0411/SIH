@@ -2,7 +2,7 @@
 
 import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useViewer } from './CesiumRoot';
 import { useActiveDetail, useDataStore, useViewStore } from '@/lib/store';
 import { toSceneZ } from '@/lib/cesium/terrain';
@@ -125,7 +125,13 @@ export default function CameraDirector() {
   } | null>(null);
   const activeSiteId = useViewStore((s) => s.activeSiteId);
   const sites = useDataStore((s) => s.sites);
-  const buildings = useDataStore((s) => s.buildings);
+  // The EPOCH, not the collection: an attribute edit gives `buildings` a new
+  // identity, and this collection is a dependency of the choreography effect
+  // below -- so a Save used to restart a 1.5 s flight to where the camera
+  // already was. The memo pins the identity to a genuine reload.
+  const buildingsEpoch = useDataStore((s) => s.buildingsEpoch);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const buildings = useMemo(() => useDataStore.getState().buildings, [buildingsEpoch]);
   const detail = useActiveDetail();
 
   /**

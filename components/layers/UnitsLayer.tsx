@@ -2,6 +2,7 @@
 
 import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
+import { createSettledSet, keyedValue, NOW, type SettledSet } from '@/lib/cesium/settled';
 import { useEffect, useRef } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
 import { useDataStore, useEnsureDetail, useViewStore } from '@/lib/store';
@@ -120,7 +121,6 @@ export default function UnitsLayer() {
   const showFloors = useViewStore((s) => s.layers.floors);
   const underground = useViewStore((s) => s.underground);
   const slice = useViewStore((s) => s.slice);
-  const buildings = useDataStore((s) => s.buildings);
   const detail = useEnsureDetail(mode === 'city' ? null : activeBuildingId);
 
   const stateRef = useRef<UnitState>({
@@ -131,12 +131,20 @@ export default function UnitsLayer() {
     selectedCore: null, hiddenSegments: new Set(),
   });
   const dsRef = useRef<Cesium.CustomDataSource | null>(null);
+  /** The geometry baked for the current build; re-synced on every store change that moves it. */
+  const settledRef = useRef<SettledSet | null>(null);
   /** The core bars, by core_ref, so the sync effect can re-tag the active one. */
   const barsRef = useRef<Map<string, Cesium.Entity>>(new Map());
 
-  const footprint = buildings?.features.find(
-    (f) => f.properties.id === activeBuildingId,
-  );
+  /**
+   * The active building's feature, selected by identity. patchBuilding
+   * replaces only the edited feature's object, so an edit to ANOTHER building
+   * leaves this reference -- and the model built from it -- untouched, while
+   * an edit to this one still rebuilds it.
+   */
+  const footprint = useDataStore((s) => (activeBuildingId === null
+    ? undefined
+    : s.buildings?.features.find((f) => f.properties.id === activeBuildingId)));
 
   // ---- push store state into the render closure ----------------------------
   useEffect(() => {
@@ -190,6 +198,11 @@ export default function UnitsLayer() {
       // visible as "the layer suddenly snaps" instead of easing.
       s.armFade?.();
     }
+    // The geometry is baked (lib/cesium/settled.ts): re-read it now that the
+    // store fields it depends on -- mode, isolate, explode, section -- moved.
+    if (settledRef.current?.sync() && viewer && !viewer.isDestroyed()) {
+      viewer.scene.requestRender();
+    }
   }, [mode, isolatedFloor, selectedUnitId, hoveredUnitId, explodeT,
       slice.enabled, showFloors, underground, detail, viewer]);
 
@@ -202,6 +215,7 @@ export default function UnitsLayer() {
     stateRef.current.plane =
       slice.enabled && ring ? slicePlane(ring, slice.axis, slice.offset) : null;
     stateRef.current.sliceVersion += 1;
+    settledRef.current?.sync();
     if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
   }, [footprint, slice.enabled, slice.axis, slice.offset, viewer]);
 
@@ -216,6 +230,12 @@ export default function UnitsLayer() {
     const ds = new Cesium.CustomDataSource('units');
     dsRef.current = ds;
     viewer.dataSources.add(ds);
+    // Every unit's hierarchy and heights are baked into constants and
+    // re-synced from the store effects above, so the boxes stay on Cesium's
+    // static (batched, worker-built) path instead of being re-tessellated on
+    // every rendered frame. See lib/cesium/settled.ts.
+    const settled = createSettledSet();
+    settledRef.current = settled;
 
     const readSection = () => ({
       version: stateRef.current.sliceVersion,
@@ -399,9 +419,11 @@ export default function UnitsLayer() {
           false,
         ) as unknown as Cesium.PositionProperty,
         polygon: {
-          hierarchy: section.hierarchy,
-          height: new Cesium.CallbackProperty(baseZ, false),
-          extrudedHeight: new Cesium.CallbackProperty(() => baseZ() + boxHeight, false),
+          // Baked, not callbacks -- see the settled set above. The section's
+          // hierarchy object only changes identity when the plane moves.
+          hierarchy: settled.value(() => section.hierarchy.getValue(NOW)),
+          height: settled.scalar(baseZ),
+          extrudedHeight: settled.scalar(() => baseZ() + boxHeight),
           material: new Cesium.ColorMaterialProperty(
             new Cesium.CallbackProperty(() => {
               const s = stateRef.current;
@@ -452,11 +474,13 @@ export default function UnitsLayer() {
           label: {
             text: labelText,
             font: kind === 'parking' ? FLOOR_VIEW.LABEL_BAY_FONT : FLOOR_VIEW.LABEL_FONT,
-            // Plain fill on a solid pill. The 3px halo this used to wear is
-            // what turned a 13px code into a dark smear.
+            // Plain fill, no halo. A flat's number is plain black type sitting
+            // directly on its tinted top face -- no pill behind it, at the
+            // owner's request. Bays keep their pill: forty tight codes on a
+            // grey plate need it to stay legible.
             style: Cesium.LabelStyle.FILL,
-            fillColor: MATERIALS.unitLabelFill,
-            showBackground: true,
+            fillColor: kind === 'parking' ? MATERIALS.unitLabelFill : MATERIALS.flatLabelInk,
+            showBackground: kind === 'parking',
             backgroundColor: new Cesium.CallbackProperty(() => {
               const s = stateRef.current;
               if (isOwn()) return MATERIALS.unitLabelBgOwn;
@@ -587,6 +611,8 @@ export default function UnitsLayer() {
       if (!viewer.isDestroyed()) viewer.dataSources.remove(ds, true);
       dsRef.current = null;
       barsRef.current.clear();
+      settled.dispose();
+      if (settledRef.current === settled) settledRef.current = null;
     };
   }, [viewer, ready, ground, detail, activeBuildingId, footprint]);
 

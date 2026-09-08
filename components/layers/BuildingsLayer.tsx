@@ -88,6 +88,14 @@ const NEAR_DDC = new Cesium.DistanceDisplayCondition(0, FAR_M);
  */
 const CITY_ALPHA = 0.95;
 
+/** Shared, never mutated: the per-frame callbacks return these by reference. */
+const WALL_AT_REST = Cesium.Color.WHITE.withAlpha(CITY_ALPHA);
+const CITIZEN_SHELL = Cesium.Color.WHITE.withAlpha(MATERIALS.citizenMassAlpha);
+const CAP_HOVER = MATERIALS.buildingHover.withAlpha(0.85);
+/** Scratch colours for the faded state, so easing the fade allocates nothing. */
+const wallScratch = new Cesium.Color();
+const capScratch = new Cesium.Color();
+
 export default function BuildingsLayer() {
   const { viewer, ground, ready } = useViewer();
   // The EPOCH, not the collection.
@@ -174,6 +182,48 @@ export default function BuildingsLayer() {
     );
     gridRef.current = grid;
 
+    // Session role is fixed for the life of the page, so it is read once here
+    // rather than being a dependency that could rebuild the city.
+    const citizenBuild = useViewStore.getState().session.role === 'citizen';
+
+    /**
+     * The four wall materials, one per use type, and the ONE colour callback
+     * they share. See the per-footprint comment for why sharing is the whole
+     * point: Cesium batches by material identity.
+     */
+    const wallTint = new Cesium.CallbackProperty(
+      () => {
+        const s = stateRef.current;
+        // Photoreal: present for picking, invisible on screen.
+        if (s.style === 'photoreal') return MATERIALS.buildingGhost;
+        if (s.activeId === null) return WALL_AT_REST;
+        // Into OUR scratch, never into the `result` Cesium passes: for an
+        // image material that argument is the material's live uniform, which
+        // after an at-rest frame IS the shared constant returned above.
+        return Cesium.Color.fromAlpha(
+          Cesium.Color.WHITE, Math.min(CITY_ALPHA, s.fade), wallScratch);
+      },
+      false,
+    );
+    const wallMaterials = new Map<UseType, Cesium.ImageMaterialProperty>();
+    const wallMaterialFor = (use: UseType): Cesium.ImageMaterialProperty => {
+      let m = wallMaterials.get(use);
+      if (!m) {
+        m = new Cesium.ImageMaterialProperty({ image: windowGrid(use, 3, 3.2), color: wallTint });
+        wallMaterials.set(use, m);
+      }
+      return m;
+    };
+    const capRest = new Map<UseType, Cesium.Color>();
+    const capRestFor = (use: UseType): Cesium.Color => {
+      let c = capRest.get(use);
+      if (!c) {
+        c = MATERIALS.buildingRoofCap(use, CITY_ALPHA);
+        capRest.set(use, c);
+      }
+      return c;
+    };
+
     /**
      * One footprint. Called by the incremental builder, a slice at a time.
      *
@@ -237,24 +287,35 @@ export default function BuildingsLayer() {
       // `fade` is clamped rather than multiplied: it is an absolute alpha for
       // the buildings you are not inspecting, so clamping keeps "faded" below
       // "at rest" without ever multiplying two transparencies into nothing.
-      const wallMaterial = new Cesium.ImageMaterialProperty({
-        image: windowGrid(use, 3, 3.2),
-        color: new Cesium.CallbackProperty(() => {
-          const s = stateRef.current;
-          // Photoreal: present for picking, invisible on screen. Checked first
-          // so neither hover nor fade can bring the ghost back into view.
-          if (s.style === 'photoreal') return MATERIALS.buildingGhost;
-          // The citizen's own tower, seen from inside it: a faint shell.
-          if (s.citizen && s.hideActive && s.activeId === id) {
-            return Cesium.Color.WHITE.withAlpha(MATERIALS.citizenMassAlpha);
-          }
-          if (s.hoveredId === id) return MATERIALS.buildingHover.withAlpha(0.85);
-          if (s.activeId === null || s.activeId === id) {
-            return Cesium.Color.WHITE.withAlpha(CITY_ALPHA);
-          }
-          return Cesium.Color.WHITE.withAlpha(Math.min(CITY_ALPHA, s.fade));
-        }, false),
-      });
+      //
+      // ONE MATERIAL PER USE TYPE, not one per building. Cesium batches
+      // textured polygons per distinct material, and ImageMaterialProperty
+      // compares its colour property by callback reference -- so a fresh
+      // closure per footprint gave every building its own primitive: ~2,600
+      // draw calls and ~2,600 material evaluations a frame where four would
+      // do, and the bucket grid's frustum culling never got a chance. The
+      // shared callback therefore answers only the GLOBAL questions (style,
+      // whether anything is selected, the fade). Hover stays visible on the
+      // roof cap below, which is what the eye reads anyway -- the wall's
+      // hover tint was white at 0.85 over a wall that is white at 0.95.
+      //
+      // The citizen path is the exception: the collection they are served is
+      // ONE building, and its shell has to know it is the active one, so it
+      // keeps a material of its own. Batching one building is moot.
+      const wallMaterial = citizenBuild
+        ? new Cesium.ImageMaterialProperty({
+            image: windowGrid(use, 3, 3.2),
+            color: new Cesium.CallbackProperty(() => {
+              const s = stateRef.current;
+              if (s.style === 'photoreal') return MATERIALS.buildingGhost;
+              // The citizen's own tower, seen from inside it: a faint shell.
+              if (s.citizen && s.hideActive && s.activeId === id) return CITIZEN_SHELL;
+              if (s.activeId === null || s.activeId === id) return WALL_AT_REST;
+              return Cesium.Color.fromAlpha(
+                Cesium.Color.WHITE, Math.min(CITY_ALPHA, s.fade), wallScratch);
+            }, false),
+          })
+        : wallMaterialFor(use);
 
       const entity = ds.entities.add({
         polygon: {
@@ -292,21 +353,26 @@ export default function BuildingsLayer() {
       // (walls + cap) dissolving together. The cap is opaque at CITY_ALPHA,
       // not the historic translucent BUILDING_ALPHA, so the roof reads as
       // solid with the wall (DL-K.3).
+      const capAtRest = capRestFor(use);
       const capTop = base + Math.max(2, props.height_m) + 0.05;
       const capEntity = ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
           height: capTop - 0.1,
           extrudedHeight: capTop,
+          // Per-instance colour: a ColorMaterialProperty rides the colour
+          // batch, so every cap in a bucket shares one primitive and this
+          // callback only writes an attribute. It returns shared constants
+          // and a scratch Colour rather than allocating: ~2,600 of these
+          // run every frame the fade is easing.
           material: new Cesium.ColorMaterialProperty(
-            new Cesium.CallbackProperty(() => {
+            new Cesium.CallbackProperty((_t?: Cesium.JulianDate, result?: Cesium.Color) => {
               const s = stateRef.current;
               if (s.style === 'photoreal') return MATERIALS.buildingGhost;
-              if (s.hoveredId === id) return MATERIALS.buildingHover.withAlpha(0.85);
-              if (s.activeId === null || s.activeId === id) {
-                return MATERIALS.buildingRoofCap(use, CITY_ALPHA);
-              }
-              return MATERIALS.buildingRoofCap(use, Math.min(CITY_ALPHA, s.fade));
+              if (s.hoveredId === id) return CAP_HOVER;
+              if (s.activeId === null || s.activeId === id) return capAtRest;
+              return Cesium.Color.fromAlpha(
+                capAtRest, Math.min(CITY_ALPHA, s.fade), result ?? capScratch);
             }, false),
           ),
           outline: false,
@@ -426,8 +492,12 @@ export default function BuildingsLayer() {
     // nothing here touches the tileset.
     s.fadeTarget =
       underground ? 0.15 : activeBuildingId === null ? 1 : transparency / 100;
+    // A CallbackProperty raises no definitionChanged, and the scene renders on
+    // demand: without asking for a frame here a hover or selection tint waits
+    // for whatever next happens to render, up to maximumRenderTimeChange.
+    if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
   }, [activeBuildingId, hoveredBuildingId, showBuildings, gis2d, mode,
-      transparency, underground, buildingStyle, citizen]);
+      transparency, underground, buildingStyle, citizen, viewer]);
 
   // Shadows follow the sun slider. Off until it is touched.
   useEffect(() => {

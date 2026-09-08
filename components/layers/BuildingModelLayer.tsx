@@ -2,6 +2,7 @@
 
 import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
+import { createSettledSet, keyedValue, NOW, type SettledSet } from '@/lib/cesium/settled';
 import { useEffect, useRef } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
 import { useDataStore, useEnsureDetail, useViewStore } from '@/lib/store';
@@ -44,8 +45,16 @@ interface ModelState {
 
 export default function BuildingModelLayer() {
   const { viewer, ground, ready } = useViewer();
-  const buildings = useDataStore((s) => s.buildings);
   const activeBuildingId = useViewStore((s) => s.activeBuildingId);
+  /**
+   * The active building's feature, selected by identity. patchBuilding
+   * replaces only the edited feature's object, so an edit to ANOTHER building
+   * leaves this reference -- and the model built from it -- untouched, while
+   * an edit to this one still rebuilds it.
+   */
+  const footprint = useDataStore((s) => (activeBuildingId === null
+    ? undefined
+    : s.buildings?.features.find((f) => f.properties.id === activeBuildingId)));
   const mode = useViewStore((s) => s.mode);
   const explodeT = useViewStore((s) => s.explodeT);
   const sunHour = useViewStore((s) => s.sunHour);
@@ -58,10 +67,17 @@ export default function BuildingModelLayer() {
   /** Shared shadow mode -- see the note in BuildingsLayer. */
   const shadowsRef = useRef(new Cesium.ConstantProperty(Cesium.ShadowMode.DISABLED));
   const dsRef = useRef<Cesium.CustomDataSource | null>(null);
+  /** The geometry baked for the current build; re-synced on every store change that moves it. */
+  const settledRef = useRef<SettledSet | null>(null);
 
   useEffect(() => {
     stateRef.current.explodeT = explodeT;
-  }, [explodeT]);
+    // The storey blocks are baked (lib/cesium/settled.ts); re-read them now
+    // that the one store field they depend on has moved.
+    if (settledRef.current?.sync() && viewer && !viewer.isDestroyed()) {
+      viewer.scene.requestRender();
+    }
+  }, [explodeT, viewer]);
 
   useEffect(() => {
     shadowsRef.current.setValue(
@@ -72,7 +88,7 @@ export default function BuildingModelLayer() {
 
   useEffect(() => {
     if (!viewer || !ready || viewer.isDestroyed()) return;
-    if (!buildings || activeBuildingId === null || mode !== 'building' || sliceEnabled) {
+    if (!footprint || activeBuildingId === null || mode !== 'building' || sliceEnabled) {
       // Deselect, or the user drilled into a floor/unit: the slab stack drawn
       // by FloorStackLayer takes over, and this model would sit on top of it
       // occluding the isolated-floor highlight. Tear down if we still have a
@@ -90,10 +106,7 @@ export default function BuildingModelLayer() {
       return;
     }
 
-    const feat = buildings.features.find(
-      (f) => f.properties.id === activeBuildingId,
-    );
-    if (!feat) return;
+    const feat = footprint;
     const props = feat.properties as BuildingProps;
     const ring = (feat.geometry.coordinates as number[][][])[0];
     if (ring.length < 4) return;
@@ -133,6 +146,11 @@ export default function BuildingModelLayer() {
     // Build a fresh data source so previous selections are fully released.
     const ds = new Cesium.CustomDataSource('building-model');
     viewer.dataSources.add(ds);
+    // Storey blocks, caps and bands are baked into constants and re-synced
+    // when the explode slider moves, so the model stays on Cesium's static
+    // path instead of being re-tessellated on every rendered frame.
+    const settled = createSettledSet();
+    settledRef.current = settled;
     dsRef.current = ds;
 
     // ---- walls: one extruded, textured storey per level ------------------
@@ -168,11 +186,8 @@ export default function BuildingModelLayer() {
       ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
-          height: new Cesium.CallbackProperty(() => z0 + liftFor(i), false),
-          extrudedHeight: new Cesium.CallbackProperty(
-            () => z0 + FLOOR_H + liftFor(i),
-            false,
-          ),
+          height: settled.scalar(() => z0 + liftFor(i)),
+          extrudedHeight: settled.scalar(() => z0 + FLOOR_H + liftFor(i)),
           material: i === 0 ? groundTexture : wallTexture,
           outline: true,
           outlineColor: MATERIALS.buildingModelRoofLine,
@@ -184,14 +199,8 @@ export default function BuildingModelLayer() {
       ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
-          height: new Cesium.CallbackProperty(
-            () => z0 + FLOOR_H + liftFor(i) - 0.1,
-            false,
-          ),
-          extrudedHeight: new Cesium.CallbackProperty(
-            () => z0 + FLOOR_H + liftFor(i) + 0.02,
-            false,
-          ),
+          height: settled.scalar(() => z0 + FLOOR_H + liftFor(i) - 0.1),
+          extrudedHeight: settled.scalar(() => z0 + FLOOR_H + liftFor(i) + 0.02),
           material: MATERIALS.buildingModelSlabCap,
           outline: false,
           shadows: shadowsRef.current,
@@ -251,16 +260,19 @@ export default function BuildingModelLayer() {
       for (let v = 0; v < ringFlat.length; v += 2) {
         positions.push(ringFlat[v], ringFlat[v + 1], 0);
       }
+      const bandAt = keyedValue(
+        () => z0ForBand(i) + liftFor(i),
+        (z) => {
+          const out: number[] = [];
+          for (let v = 0; v < positions.length; v += 3) {
+            out.push(positions[v], positions[v + 1], z);
+          }
+          return Cesium.Cartesian3.fromDegreesArrayHeights(out);
+        },
+      );
       ds.entities.add({
         polyline: {
-          positions: new Cesium.CallbackProperty(() => {
-            const lift = liftFor(i);
-            const out: number[] = [];
-            for (let v = 0; v < positions.length; v += 3) {
-              out.push(positions[v], positions[v + 1], z0ForBand(i) + lift);
-            }
-            return Cesium.Cartesian3.fromDegreesArrayHeights(out);
-          }, false) as unknown as Cesium.PositionProperty,
+          positions: settled.value(bandAt) as unknown as Cesium.PositionProperty,
           width: 1.2,
           material: bandMat,
           clampToGround: false,
@@ -418,16 +430,17 @@ export default function BuildingModelLayer() {
     const topIndex = storeyCount - 1;
     const topPos: number[] = [];
     for (let v = 0; v < inset.length; v += 2) topPos.push(inset[v], inset[v + 1], 0);
+    const corniceAt = keyedValue(
+      () => fullTop + liftFor(topIndex),
+      (z) => {
+        const out: number[] = [];
+        for (let v = 0; v < topPos.length; v += 3) out.push(topPos[v], topPos[v + 1], z);
+        return Cesium.Cartesian3.fromDegreesArrayHeights(out);
+      },
+    );
     ds.entities.add({
       polyline: {
-        positions: new Cesium.CallbackProperty(() => {
-          const lift = liftFor(topIndex);
-          const out: number[] = [];
-          for (let v = 0; v < topPos.length; v += 3) {
-            out.push(topPos[v], topPos[v + 1], fullTop + lift);
-          }
-          return Cesium.Cartesian3.fromDegreesArrayHeights(out);
-        }, false) as unknown as Cesium.PositionProperty,
+        positions: settled.value(corniceAt) as unknown as Cesium.PositionProperty,
         width: 2,
         material: bandMat,
         clampToGround: false,
@@ -436,16 +449,17 @@ export default function BuildingModelLayer() {
 
     // ---- selection highlight: polyline along the top of the wall ---------
     // Stays visible even when the floor stack is occluding the walls.
+    const highlightAt = keyedValue(
+      () => fullTop + liftFor(topIndex) + 0.05,
+      (z) => {
+        const out: number[] = [];
+        for (let i = 0; i < flat.length; i += 2) out.push(flat[i], flat[i + 1], z);
+        return Cesium.Cartesian3.fromDegreesArrayHeights(out);
+      },
+    );
     ds.entities.add({
       polyline: {
-        positions: new Cesium.CallbackProperty(() => {
-          const lift = liftFor(topIndex);
-          const out: number[] = [];
-          for (let i = 0; i < flat.length; i += 2) {
-            out.push(flat[i], flat[i + 1], fullTop + lift + 0.05);
-          }
-          return Cesium.Cartesian3.fromDegreesArrayHeights(out);
-        }, false) as unknown as Cesium.PositionProperty,
+        positions: settled.value(highlightAt) as unknown as Cesium.PositionProperty,
         width: 2,
         material: MATERIALS.unitOutline,
         clampToGround: false,
@@ -456,8 +470,10 @@ export default function BuildingModelLayer() {
       stopRoofSync();
       if (!viewer.isDestroyed()) viewer.dataSources.remove(ds, true);
       dsRef.current = null;
+      settled.dispose();
+      if (settledRef.current === settled) settledRef.current = null;
     };
-  }, [viewer, ready, ground, buildings, activeBuildingId, mode, sliceEnabled, detail]);
+  }, [viewer, ready, ground, footprint, activeBuildingId, mode, sliceEnabled, detail]);
 
   return null;
 }

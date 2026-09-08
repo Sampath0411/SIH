@@ -1,4 +1,5 @@
 'use client';
+import { useMemo } from 'react';
 
 import { useDataStore, useViewStore } from '@/lib/store';
 import {
@@ -36,17 +37,22 @@ export default function UndergroundPanel() {
 
   // Counted from the data, per DISPLAY category, so the number beside a row is
   // the number of things that row will draw.
-  const counts = new Map<UtilityCategory, number>();
-  for (const f of utilities?.features ?? []) {
-    const cat = categoryOfAssetType((f.properties as UtilityProps).asset_type);
-    if (cat) counts.set(cat, (counts.get(cat) ?? 0) + 1);
-  }
-  // Foundations are derived from the cadastre rather than served as utility
-  // runs, so they are counted from the thing they are derived from.
-  counts.set(
-    'foundations',
-    (buildings?.features ?? []).filter((f) => f.properties.basements >= 1).length,
-  );
+  // Memoised on the collections: every strata checkbox re-renders this panel,
+  // and the three scans below are of the whole utility network and cadastre.
+  const counts = useMemo(() => {
+    const m = new Map<UtilityCategory, number>();
+    for (const f of utilities?.features ?? []) {
+      const cat = categoryOfAssetType((f.properties as UtilityProps).asset_type);
+      if (cat) m.set(cat, (m.get(cat) ?? 0) + 1);
+    }
+    // Foundations are derived from the cadastre rather than served as utility
+    // runs, so they are counted from the thing they are derived from.
+    m.set(
+      'foundations',
+      (buildings?.features ?? []).filter((f) => f.properties.basements >= 1).length,
+    );
+    return m;
+  }, [utilities, buildings]);
 
   const available = UNDERGROUND_LAYERS.filter((l) => (counts.get(l.key) ?? 0) > 0);
   const anyOn = available.some((l) => strata[l.key]);
@@ -57,9 +63,9 @@ export default function UndergroundPanel() {
    * what is loaded and would go away on its own if real survey data replaced
    * it.
    */
-  const demo = (utilities?.features ?? []).some(
+  const demo = useMemo(() => (utilities?.features ?? []).some(
     (f) => (f.properties as UtilityProps).provenance === 'demonstration',
-  );
+  ), [utilities]);
 
   const setAll = (on: boolean) => {
     const next: Partial<Record<UtilityCategory, boolean>> = {};

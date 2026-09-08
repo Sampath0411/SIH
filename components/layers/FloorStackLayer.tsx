@@ -2,6 +2,7 @@
 
 import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
+import { createSettledSet, keyedValue, NOW, type SettledSet } from '@/lib/cesium/settled';
 import { useEffect, useRef } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
 import { useDataStore, useEnsureDetail, useViewStore } from '@/lib/store';
@@ -88,7 +89,6 @@ export default function FloorStackLayer() {
   const showFloors = useViewStore((s) => s.layers.floors);
   const underground = useViewStore((s) => s.underground);
   const slice = useViewStore((s) => s.slice);
-  const buildings = useDataStore((s) => s.buildings);
   const detail = useEnsureDetail(mode === 'city' ? null : activeBuildingId);
 
   const stateRef = useRef<StackState>({
@@ -96,10 +96,18 @@ export default function FloorStackLayer() {
     underground: false, sliceVersion: 0, plane: null,
   });
   const dsRef = useRef<Cesium.CustomDataSource | null>(null);
+  /** The geometry baked for the current build; re-synced on every store change that moves it. */
+  const settledRef = useRef<SettledSet | null>(null);
 
-  const footprint = buildings?.features.find(
-    (f) => f.properties.id === activeBuildingId,
-  );
+  /**
+   * The active building's feature, selected by identity. patchBuilding
+   * replaces only the edited feature's object, so an edit to ANOTHER building
+   * leaves this reference -- and the model built from it -- untouched, while
+   * an edit to this one still rebuilds it.
+   */
+  const footprint = useDataStore((s) => (activeBuildingId === null
+    ? undefined
+    : s.buildings?.features.find((f) => f.properties.id === activeBuildingId)));
 
   useEffect(() => {
     stateRef.current.explodeT = explodeT;
@@ -113,7 +121,11 @@ export default function FloorStackLayer() {
         || (mode === 'building' && slice.enabled));
     stateRef.current.plateAll = mode === 'building' && slice.enabled;
     stateRef.current.underground = underground;
-  }, [explodeT, isolatedFloor, showFloors, mode, slice.enabled, underground]);
+    // The slab geometry is baked (lib/cesium/settled.ts); re-read it now.
+    if (settledRef.current?.sync() && viewer && !viewer.isDestroyed()) {
+      viewer.scene.requestRender();
+    }
+  }, [explodeT, isolatedFloor, showFloors, mode, slice.enabled, underground, viewer]);
 
   // The section plane is derived from the active footprint, so it is recomputed
   // when the slider moves rather than per frame. Bumping the version is what
@@ -125,6 +137,7 @@ export default function FloorStackLayer() {
     stateRef.current.plane =
       slice.enabled && ring ? slicePlane(ring, slice.axis, slice.offset) : null;
     stateRef.current.sliceVersion += 1;
+    settledRef.current?.sync();
     if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
   }, [footprint, slice.enabled, slice.axis, slice.offset, viewer]);
 
@@ -139,6 +152,11 @@ export default function FloorStackLayer() {
     const ds = new Cesium.CustomDataSource('floor-stack');
     dsRef.current = ds;
     viewer.dataSources.add(ds);
+    // Slab, shell and rim geometry is baked into constants and re-synced from
+    // the store effects above, keeping the stack on Cesium's static path
+    // rather than re-tessellating every level on every rendered frame.
+    const settled = createSettledSet();
+    settledRef.current = settled;
 
     const readSection = () => ({
       version: stateRef.current.sliceVersion,
@@ -230,16 +248,16 @@ export default function FloorStackLayer() {
       const slab = sectionedRing(ring, readSection);
       const entity = ds.entities.add({
         polygon: {
-          hierarchy: slab.hierarchy,
-          height: new Cesium.CallbackProperty(() => z0 + lift(), false),
+          hierarchy: settled.value(() => slab.hierarchy.getValue(NOW)),
+          height: settled.scalar(() => z0 + lift()),
           // Isolated, the slab collapses to the thin base plate the flats stand
           // on; the shell below carries the level's height instead.
-          extrudedHeight: new Cesium.CallbackProperty(() => {
+          extrudedHeight: settled.scalar(() => {
             const top = asPlate()
               ? z0 + FLOOR_VIEW.PLATE_THICKNESS_M
               : z1 - FLOOR_VIEW.SLAB_GAP_M;
             return top + lift();
-          }, false),
+          }),
           material: new Cesium.ColorMaterialProperty(
             new Cesium.CallbackProperty(() => {
               if (isBasement) {
@@ -277,9 +295,9 @@ export default function FloorStackLayer() {
       const shell = sectionedRing(ring, readSection);
       const shellEntity = ds.entities.add({
         polygon: {
-          hierarchy: shell.hierarchy,
-          height: new Cesium.CallbackProperty(() => z0 + lift(), false),
-          extrudedHeight: new Cesium.CallbackProperty(() => z1 + lift(), false),
+          hierarchy: settled.value(() => shell.hierarchy.getValue(NOW)),
+          height: settled.scalar(() => z0 + lift()),
+          extrudedHeight: settled.scalar(() => z1 + lift()),
           material: new Cesium.ColorMaterialProperty(
             isBasement ? MATERIALS.basementShell : MATERIALS.floorShell,
           ),
@@ -303,17 +321,19 @@ export default function FloorStackLayer() {
       // the outline are nearly edge-on. Rides the explode lift like the slab.
       const rim: number[] = [];
       for (let i = 0; i < ring.length - 1; i += 1) rim.push(ring[i][0], ring[i][1], 0);
+      // Rebuilt only when its height moves (keyedValue), so the polyline
+      // stays static between store changes.
+      const rimAt = keyedValue(
+        () => (isolated() ? z1 + lift() + 0.03 : -1e6), // parked below ground
+        (z) => {
+          const out: number[] = [];
+          for (let v = 0; v < rim.length; v += 3) out.push(rim[v], rim[v + 1], z);
+          return Cesium.Cartesian3.fromDegreesArrayHeights(out);
+        },
+      );
       ds.entities.add({
         polyline: {
-          positions: new Cesium.CallbackProperty(() => {
-            const l = lift();
-            const z = isolated() ? z1 + l + 0.03 : -1e6; // parked below ground
-            const out: number[] = [];
-            for (let v = 0; v < rim.length; v += 3) {
-              out.push(rim[v], rim[v + 1], z);
-            }
-            return Cesium.Cartesian3.fromDegreesArrayHeights(out);
-          }, false) as unknown as Cesium.PositionProperty,
+          positions: settled.value(rimAt) as unknown as Cesium.PositionProperty,
           width: 3,
           material: new Cesium.ColorMaterialProperty(
             new Cesium.CallbackProperty(
@@ -339,15 +359,16 @@ export default function FloorStackLayer() {
         const tieLon = c.lon;
         const tieLat = south;
         const depthM = depthBelowGround(bprops.ground_elev, fl.z_min);
+        const tieAt = keyedValue(
+          () => z0 + lift(),
+          (top) => Cesium.Cartesian3.fromDegreesArrayHeights([
+            tieLon, tieLat, top,
+            tieLon, tieLat, z0,
+          ]),
+        );
         ds.entities.add({
           polyline: {
-            positions: new Cesium.CallbackProperty(() => {
-              const top = z0 + lift();
-              return Cesium.Cartesian3.fromDegreesArrayHeights([
-                tieLon, tieLat, top,
-                tieLon, tieLat, z0,
-              ]);
-            }, false) as unknown as Cesium.PositionProperty,
+            positions: settled.value(tieAt) as unknown as Cesium.PositionProperty,
             width: 2,
             material: new Cesium.PolylineDashMaterialProperty({
               color: MATERIALS.depthLine,
@@ -385,6 +406,8 @@ export default function FloorStackLayer() {
     return () => {
       if (!viewer.isDestroyed()) viewer.dataSources.remove(ds, true);
       dsRef.current = null;
+      settled.dispose();
+      if (settledRef.current === settled) settledRef.current = null;
     };
   }, [viewer, ready, ground, detail, activeBuildingId, mode, footprint]);
 

@@ -68,7 +68,7 @@ export default function Check({
             <path
               d="M1 5l2.5 2.5L9 2"
               fill="none"
-              stroke="black"
+              stroke="rgb(var(--on-accent))"
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"

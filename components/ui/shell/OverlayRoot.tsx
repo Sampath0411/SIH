@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useLayoutRegime } from '@/lib/use-layout';
 import { useUiStore } from '@/lib/ui-store';
 import { useViewStore } from '@/lib/store';
@@ -84,7 +84,10 @@ export default function OverlayRoot() {
    * each control is still mounted exactly once, which the harness relies on.
    */
   const citizen = useViewStore((s) => s.session.role === 'citizen');
-  const sidePanels = citizen ? null : (underground ? (
+  // Memoised on the two things that shape it: this root has ten store
+  // subscriptions, and rebuilding the four panels' element tree for a sheet
+  // snap or a drawer toggle reconciled all of them for nothing.
+  const sidePanels = useMemo(() => (citizen ? null : (underground ? (
     <>
       <UndergroundPanel />
       <Legend />
@@ -98,7 +101,7 @@ export default function OverlayRoot() {
       <UndergroundPanel />
       <Legend />
     </>
-  ));
+  ))), [citizen, underground]);
 
   // A selection made on the canvas has to become visible without the user
   // having to go looking for it: on a phone the detail is behind a tab, so

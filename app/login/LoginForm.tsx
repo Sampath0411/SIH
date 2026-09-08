@@ -179,7 +179,7 @@ export default function LoginForm({
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded border border-edge-strong bg-surface-2 px-3 py-2 text-[12px] font-medium text-ink disabled:opacity-50"
+        className="w-full rounded border border-edgeStrong bg-surface2 px-3 py-2 text-[12px] font-medium text-ink disabled:opacity-50"
       >
         {pending ? 'Signing in…' : 'Sign in'}
       </button>
@@ -198,11 +198,11 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-const inputClass = 'w-full rounded border border-edge bg-bg px-2 py-1.5 text-[12px] text-ink focus:border-edge-strong focus:outline-none';
+const inputClass = 'w-full rounded border border-edge bg-bg px-2 py-1.5 text-[12px] text-ink focus:border-edgeStrong focus:outline-none';
 
 function roleTabClass(active: boolean): string {
   const base = 'flex-1 rounded px-2 py-1.5 transition';
   return active
-    ? `${base} bg-surface-2 text-ink`
+    ? `${base} bg-surface2 text-ink`
     : `${base} text-muted hover:text-ink`;
 }

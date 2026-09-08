@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useDataStore, useViewStore } from '@/lib/store';
 import {
   MATERIALS, RISK_HEX, ROAD_COLOR, ROAD_STYLE, SURVEY_PARCEL_VIEW,
@@ -74,20 +74,28 @@ export default function Legend() {
 
   // Counted per DISPLAY category, not per stored asset_type, so the section
   // below and the underground panel agree about what "Electrical" contains.
-  const counts = new Map<UtilityCategory, number>();
-  for (const f of utilities?.features ?? []) {
-    const cat = categoryOfAssetType(f.properties.asset_type);
-    if (cat) counts.set(cat, (counts.get(cat) ?? 0) + 1);
-  }
+  // Memoised on the collections: the legend re-renders on every selection,
+  // and recounting the whole cadastre for a click is wasted work.
+  const counts = useMemo(() => {
+    const m = new Map<UtilityCategory, number>();
+    for (const f of utilities?.features ?? []) {
+      const cat = categoryOfAssetType(f.properties.asset_type);
+      if (cat) m.set(cat, (m.get(cat) ?? 0) + 1);
+    }
+    return m;
+  }, [utilities]);
 
   // Counted, not written down: the mix is a property of the loaded data.
-  const provCounts = new Map<string, number>();
-  let synthetic = 0;
-  for (const f of buildings?.features ?? []) {
-    const src = f.properties.height_source;
-    provCounts.set(src, (provCounts.get(src) ?? 0) + 1);
-    if (f.properties.survey_synthetic) synthetic++;
-  }
+  const { provCounts, synthetic } = useMemo(() => {
+    const pc = new Map<string, number>();
+    let syn = 0;
+    for (const f of buildings?.features ?? []) {
+      const src = f.properties.height_source;
+      pc.set(src, (pc.get(src) ?? 0) + 1);
+      if (f.properties.survey_synthetic) syn++;
+    }
+    return { provCounts: pc, synthetic: syn };
+  }, [buildings]);
 
   return (
     <div data-panel="legend" className="glass pointer-events-auto w-full rounded-lg p-2.5">

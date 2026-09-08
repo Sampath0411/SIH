@@ -1,4 +1,5 @@
 'use client';
+import { useMemo } from 'react';
 
 import { useDataStore, useViewStore } from '@/lib/store';
 import { useViewer } from '../globe/CesiumRoot';
@@ -71,9 +72,11 @@ export default function StatusBar({
    * gained exactly one field for projects, and this is not it.
    */
   const projectName = buildings?.aoi ?? null;
-  const activeProps = activeBuildingId !== null
+  // Memoised: this bar re-renders on every camera-height publish during a
+  // zoom, and a linear scan of the cadastre per render is not free.
+  const activeProps = useMemo(() => (activeBuildingId !== null
     ? buildings?.features.find((f) => f.properties.id === activeBuildingId)?.properties
-    : null;
+    : null), [buildings, activeBuildingId]);
 
 
   return (

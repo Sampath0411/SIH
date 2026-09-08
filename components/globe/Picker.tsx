@@ -447,7 +447,8 @@ export default function Picker() {
       if (!handler.isDestroyed()) handler.destroy();
     };
   }, [viewer, ready, selectBuilding, isolateFloor, selectUnit, openUnit,
-      selectUtility, selectComponent, setHover, setActiveSurveyParcel]);
+      selectUtility, selectComponent, setHover, setActiveSurveyParcel,
+      clearAmbient, selectRoad]);
 
   return null;
 }

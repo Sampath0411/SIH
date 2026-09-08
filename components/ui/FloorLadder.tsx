@@ -1,4 +1,5 @@
 'use client';
+import { useMemo } from 'react';
 
 import { useEnsureDetail, useViewStore } from '@/lib/store';
 import { levelLabel } from '@/lib/ulpin';
@@ -28,6 +29,19 @@ export default function FloorLadder({
   const isolateFloor = useViewStore((s) => s.isolateFloor);
   const citizen = useViewStore((s) => s.session.role === 'citizen');
   const detail = useEnsureDetail(mode === 'city' ? null : activeBuildingId);
+  // Subscribed, not read off getState(): a citizen's floor marker has to
+  // follow the session if it is refreshed after mount.
+  const sessionFloor = useViewStore((s) => s.session.floor);
+  // Units grouped by level, once per document, rather than four passes over
+  // every unit for every rung on every render.
+  const unitsByLevel = useMemo(() => {
+    const m = new Map<number, NonNullable<typeof detail>['units']>();
+    for (const u of detail?.units ?? []) {
+      const on = m.get(u.level_no);
+      if (on) on.push(u); else m.set(u.level_no, [u]);
+    }
+    return m;
+  }, [detail]);
 
   if (mode === 'city' || !detail || detail.floors.length === 0) return null;
 
@@ -41,7 +55,7 @@ export default function FloorLadder({
 
   /** A rung's tooltip: what is on the level, and how deep it is if below. */
   const tooltipFor = (level: number): string => {
-    const on = detail.units.filter((u) => u.level_no === level);
+    const on = unitsByLevel.get(level) ?? [];
     const flats = on.filter((u) => (u.kind ?? 'flat') === 'flat').length;
     const bays = on.filter((u) => u.kind === 'parking').length;
     const what = flats ? `${flats} flat${flats === 1 ? '' : 's'}`
@@ -58,7 +72,7 @@ export default function FloorLadder({
   // A citizen walks every level of their building; only the register behind
   // the neighbours' doors is withheld, and that is the server's job, not the
   // ladder's. Their own floor is marked so it can be found again.
-  const ownLevel = citizen ? useViewStore.getState().session.floor : null;
+  const ownLevel = citizen ? sessionFloor : null;
 
   return (
     <div

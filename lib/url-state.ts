@@ -266,7 +266,15 @@ export function useUrlState(): void {
 
     // Coalesce to one write per frame: a slider drag emits a store update per
     // pointermove, and replaceState is not free.
-    const unsub = useViewStore.subscribe(() => {
+    //
+    // And only for writes that can change the URL. The hover stream from the
+    // Picker is a store write ~33 times a second while the pointer crosses
+    // the scene, and hover is deliberately not serialised -- so a frame that
+    // re-serialised the whole state to discover nothing changed was pure
+    // waste on the interaction path. A cheap identity check on the fields
+    // that ARE serialised gates the frame instead.
+    const unsub = useViewStore.subscribe((s, prev) => {
+      if (onlyHoverChanged(s, prev)) return;
       if (frame === 0) frame = requestAnimationFrame(write);
     });
 
@@ -276,4 +284,22 @@ export function useUrlState(): void {
       unsub();
     };
   }, []);
+}
+
+/**
+ * True when the only fields that differ between two view-store snapshots are
+ * the hover ids. Hover is never serialised (see serialise), so a write that
+ * touches nothing else cannot change the URL and need not schedule a frame.
+ */
+const HOVER_KEYS = new Set([
+  'hoveredBuildingId', 'hoveredUnitId', 'hoveredRoadId', 'hoveredSurveyParcelId',
+]);
+function onlyHoverChanged(s: ViewState, prev: ViewState): boolean {
+  const a = s as unknown as Record<string, unknown>;
+  const b = prev as unknown as Record<string, unknown>;
+  for (const k in a) {
+    if (HOVER_KEYS.has(k)) continue;
+    if (a[k] !== b[k]) return false;
+  }
+  return true;
 }

@@ -83,9 +83,13 @@ export default function UtilitiesLayer() {
   const [mounted, setMounted] = useState<UtilityCategory[]>([]);
   useEffect(() => {
     if (!showUtilities) return;
-    const missing = UNDERGROUND_ORDER.filter((k) => strata[k] && !mounted.includes(k));
-    if (missing.length > 0) setMounted((prev) => [...prev, ...missing]);
-  }, [showUtilities, strata, mounted]);
+    // Computed inside the updater so this effect does not list its own output
+    // as a dependency (which cost every toggle a second pass of the subtree).
+    setMounted((prev) => {
+      const missing = UNDERGROUND_ORDER.filter((k) => strata[k] && !prev.includes(k));
+      return missing.length > 0 ? [...prev, ...missing] : prev;
+    });
+  }, [showUtilities, strata]);
 
   /**
    * The terrain surface, as a function of position.

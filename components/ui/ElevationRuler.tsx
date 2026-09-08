@@ -86,6 +86,19 @@ export default function ElevationRuler() {
     const floors = [...detail.floors].sort((a, b) => a.level_no - b.level_no);
     const top = bprops.floors - 1;
 
+    // The last ticks published to React. postRender fires on every rendered
+    // frame; when nothing on screen has moved, re-rendering N absolutely
+    // positioned labels for the same pixels is pure cost, so the handler
+    // compares before it publishes (the useCameraHeight idiom).
+    let last: Tick[] = [];
+    const same = (a: Tick[], b: Tick[]) => {
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        if (a[i].key !== b[i].key) return false;
+        if (Math.abs(a[i].x - b[i].x) > 0.5 || Math.abs(a[i].y - b[i].y) > 0.5) return false;
+      }
+      return true;
+    };
     const update = () => {
       if (viewer.isDestroyed()) return;
       const next: Tick[] = [];
@@ -106,6 +119,8 @@ export default function ElevationRuler() {
           basement: f.level_no < 0,
         });
       });
+      if (same(last, next)) return;
+      last = next;
       setTicks(next);
     };
 
