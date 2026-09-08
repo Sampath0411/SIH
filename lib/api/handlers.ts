@@ -208,30 +208,29 @@ export function parcelsRoute(slug: string, req: Request) {
   return serve(slug, 'parcels', getParcels, req, {}, filterParcelsForCitizen);
 }
 
-/** Citizen view: only the parcel that contains the citizen's building.
- *  The match is by the building's parcel_id, looked up in the buildings
- *  snapshot -- a single file read that is already on the hot path. */
-async function filterParcelsForCitizen(
+/**
+ * Citizen view: the plot boundaries around them, and not a name on any of them.
+ *
+ * WIDER THAN THE BUILDING FILTER ABOVE, deliberately. A parcel boundary is
+ * ground-draped cadastral geometry, not a home: it is what the "Parcel
+ * context" inset is a map OF, and cutting the collection to the single plot
+ * under the citizen's own tower left that inset drawing one square in an
+ * empty frame -- a context map with no context. Buildings stay restricted to
+ * their own, so the neighbourhood reads as plots, not as other people's
+ * homes, and the inset's dark footprint is still theirs alone.
+ *
+ * Every parcel loses its identifier and its owner, including the one their
+ * own building stands on: that plot belongs to the developer. What is left
+ * is a boundary and an id, and `Picker` has no `case 'parcel'` at all, so
+ * none of them opens a card.
+ */
+function filterParcelsForCitizen(
   value: GeoFC,
-  ctx: { kind: 'citizen'; buildingId: number; slug: string },
-): Promise<GeoFC> {
+  _ctx: { kind: 'citizen'; buildingId: number; slug: string },
+): GeoFC {
+  void _ctx;
   const features = Array.isArray(value.features) ? value.features : [];
-  // Look up the building's parcel_id. The buildings file is already on the
-  // hot path; one more read inside a citizen filter is fine.
-  const buildings = await getBuildings(ctx.slug);
-  const bFeature = buildings.features.find(
-    (b) => (b.properties as { id?: number })?.id === ctx.buildingId,
-  );
-  const parcelId = (bFeature?.properties as { parcel_id?: number } | null)?.parcel_id;
-  if (parcelId === undefined) {
-    return { ...value, features: [] };
-  }
-  return {
-    ...value,
-    features: features
-      .filter((f) => (f.properties as { id?: number } | null)?.id === parcelId)
-      .map(stripFeatureIdentity),
-  };
+  return { ...value, features: features.map(stripFeatureIdentity) };
 }
 
 /** GET .../survey-parcels -> the 2D cadastral layer, as GeoJSON. */
