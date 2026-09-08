@@ -8,8 +8,8 @@ import type { BuildingDetail, Project, UnitInfo } from '@/lib/types';
 /**
  * "Generate 3D Property Deed" -- the export button on the unit card.
  *
- * Sits in the Panel header as an `action`, the same slot the building card's
- * Edit button uses, so the two read as the same kind of control.
+ * Sits in the panel BODY, directly under the ULPIN card it exports -- see the
+ * comment on the markup below for why it is not in the header.
  *
  * THE WORK HAPPENS ON CLICK, NOT ON RENDER. jspdf and qrcode are a few hundred
  * kilobytes between them and this button is not pressed in most sessions, so
@@ -104,22 +104,47 @@ export default function DeedButton({
     }
   };
 
+  /*
+   * A FILLED, FULL-WIDTH CONTROL, not a text link in the panel header.
+   *
+   * This first shipped in the header's `action` slot, styled like the building
+   * card's Edit button -- muted text, no border, no fill. That reads as a
+   * control when it is one short word next to a title. At five words it reads
+   * as a caption, and it was reported as missing by someone looking straight
+   * at it.
+   *
+   * So it sits in the body under the identifier it exports, at full width and
+   * with a background, which is the same affordance the theme and view-mode
+   * buttons use. Monochrome, because scripts/shoot.mjs audits `.glass` for
+   * unsanctioned chroma; the only colour here is --danger on a failure, which
+   * is the one hue this palette spends on a state the reader must not miss.
+   */
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="mt-2">
       <button
         type="button"
         onClick={onClick}
         disabled={busy}
-        title="Download a PDF deed for this volume: 3D ULPIN, owner, bounding coordinates, volume and a QR code to the parcel API"
-        className="shrink-0 rounded px-2 py-1 text-[11px] text-[rgb(var(--muted))] tint-hover hover:text-[rgb(var(--ink))] disabled:opacity-50"
+        title="Download a PDF deed for this volume: 3D ULPIN, owner, bounding coordinates, volume in m³ and a QR code to the parcel API"
+        className={[
+          'w-full rounded py-1.5 text-[11px] transition-colors',
+          busy
+            ? 'is-disabled bg-[rgb(var(--tint)/0.06)]'
+            : 'bg-[rgb(var(--tint)/0.1)] text-[rgb(var(--ink))] tint-hover',
+        ].join(' ')}
       >
-        {busy ? 'Generating…' : 'Generate 3D Property Deed'}
+        {busy ? 'Generating deed…' : '↓  Generate 3D Property Deed'}
       </button>
       {error ? (
-        <span className="max-w-[150px] text-right text-[10px] leading-tight text-[rgb(var(--danger))]">
+        <p className="mt-1 text-[10px] leading-snug text-[rgb(var(--danger))]">
           {error}
-        </span>
-      ) : null}
+        </p>
+      ) : (
+        <p className="mt-1 text-[10px] leading-snug text-[rgb(var(--muted))]">
+          PDF with the 3D ULPIN, bounding coordinates, volumetric extent and a
+          QR code to this parcel&rsquo;s API record.
+        </p>
+      )}
     </div>
   );
 }

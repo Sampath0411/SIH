@@ -1095,18 +1095,19 @@ export default function DetailPanel() {
         <Panel
           title={unitTitle(unit)}
           kicker={isOwn ? 'Your flat' : kindInfo.kicker}
-          action={
-            <DeedButton
-              unit={unit}
-              detail={detail}
-              project={project}
-              title={unitTitle(unit)}
-              kicker={isOwn ? 'Your flat' : kindInfo.kicker}
-              titled={kindInfo.titled}
-            />
-          }
         >
           {unit.ulpin ? <UlpinCard ulpin={unit.ulpin} /> : null}
+
+          {/* Directly under the identifier it exports, so the two read as one
+              thing: this is the ULPIN, and this is how you take it away. */}
+          <DeedButton
+            unit={unit}
+            detail={detail}
+            project={project}
+            title={unitTitle(unit)}
+            kicker={isOwn ? 'Your flat' : kindInfo.kicker}
+            titled={kindInfo.titled}
+          />
 
           {/* The three answers a holder opens this panel for, ahead of any of
               the rows: is it mine outright, is the tax settled, do I owe

@@ -219,6 +219,66 @@ try {
       `${after.markers} entities`);
   }
 
+  // ---- the deed control, on a real unit card ----------------------------
+  // Guards the bug this feature actually shipped with: the button was there,
+  // but styled as muted text with no border or fill in the panel header, so it
+  // read as a caption and was reported as missing by someone looking at it.
+  // Presence alone is not enough -- it has to look like a control.
+  const flat = tower.units.find((u) => u.kind === 'flat');
+  await page.goto(`${ORIGIN}/p/${SLUG}?b=${TOWER}&f=1&unit=${flat.id}`, {
+    waitUntil: 'domcontentloaded', timeout: 90000,
+  });
+  await new Promise((r) => setTimeout(r, 18000));
+
+  const deedUi = await page.evaluate(() => {
+    const panel = document.querySelector('[data-panel="detail"]');
+    const btn = [...document.querySelectorAll('button')]
+      .find((b) => /Generate 3D Property Deed/i.test(b.textContent ?? ''));
+    if (!btn) return { present: false };
+    const cs = getComputedStyle(btn);
+    const r = btn.getBoundingClientRect();
+    return {
+      present: true,
+      inPanel: !!panel && panel.contains(btn),
+      // A filled control, not bare text: a visible background and a real
+      // clickable area rather than a line of type.
+      filled: cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent',
+      width: Math.round(r.width),
+      height: Math.round(r.height),
+      title: panel?.querySelector('h2')?.textContent ?? null,
+    };
+  });
+  check('a unit card is open', deedUi.title === 'Flat 101', String(deedUi.title));
+  check('the deed control is present on a unit card', deedUi.present === true);
+  check('the deed control sits in the detail panel', deedUi.inPanel === true);
+  check('the deed control is a filled control, not bare text',
+    deedUi.filled === true);
+  check('the deed control is a full-width target', (deedUi.width ?? 0) > 200,
+    `${deedUi.width}x${deedUi.height}`);
+
+  // And it actually produces a PDF when pressed. The download itself cannot be
+  // asserted here -- CDP's download interception cancels even a plain text
+  // blob in this harness -- so what is checked is that the click completes
+  // without surfacing an error and the button returns to its resting label.
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll('button')]
+      .find((x) => /Generate 3D Property Deed/i.test(x.textContent ?? ''));
+    b?.click();
+  });
+  await new Promise((r) => setTimeout(r, 12000));
+  const afterClick = await page.evaluate(() => {
+    const panel = document.querySelector('[data-panel="detail"]');
+    const b = [...document.querySelectorAll('button')]
+      .find((x) => /Generate 3D Property Deed|Generating deed/i.test(x.textContent ?? ''));
+    return {
+      label: b?.textContent?.trim() ?? null,
+      failed: /could not generate|no record to print/i.test(panel?.textContent ?? ''),
+    };
+  });
+  check('pressing it reports no failure', afterClick.failed === false);
+  check('the control settles back to its resting label',
+    /Generate 3D Property Deed/i.test(afterClick.label ?? ''), String(afterClick.label));
+
   check('no uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 } finally {
   await browser.close();
