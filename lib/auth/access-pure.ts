@@ -92,52 +92,132 @@ export function ownsUnit(ctx: CallerContext, unit: UnitLike): boolean {
 }
 
 /**
- * The geometry and placement every unit keeps, whoever is asking. None of it
- * says anything about who lives there.
+ * The kinds of volume that are building FABRIC rather than space anyone
+ * could hold: the lift shaft, the staircase, the corridors and drive aisles,
+ * the plant room. None of them is a registered spatial unit in this
+ * cadastre, so none of them carries an identifier out of the API.
  */
-const PUBLIC_UNIT_FIELDS = [
-  'id', 'floor_id', 'unit_no', 'level_no', 'z_min', 'z_max', 'ring',
+const FABRIC_KINDS: ReadonlySet<string> = new Set([
+  'elevator', 'stair', 'circulation', 'atrium', 'plant',
+]);
+
+/** The register-shaped fields a fabric volume must not carry. */
+const IDENTITY_FIELDS = [
+  'ulpin', 'carpet_m2', 'built_m2', 'tenure', 'encumbrance',
+  'owner', 'address', 'facing',
 ] as const;
+
+/**
+ * Strip the identity off every fabric volume, for every caller.
+ *
+ * The demo seed writes the cores, the aisles, the lobby and the plant room
+ * WITHOUT a ULPIN, because a staircase is not something a person holds and
+ * an identifier on it invited exactly that reading -- the panel then had to
+ * talk the user out of exporting a certificate for a lift shaft. PostGIS
+ * cannot store a NULL there (`unit.ulpin` is UNIQUE NOT NULL), so the row
+ * keeps a minted one and this function removes it on the way out. Both
+ * backends therefore serve the same document, which is the contract every
+ * acceptance script here is built on.
+ *
+ * `kind`, `core_ref`, `label`, the geometry and the level all survive: they
+ * are what the volume IS, and the viewer draws and titles it from them.
+ */
+export function stripCoreIdentity<
+  T extends { units?: UnitLike[] },
+>(detail: T): T {
+  const units = Array.isArray(detail.units) ? detail.units : [];
+  if (!units.some((u) => FABRIC_KINDS.has((u as { kind?: string }).kind ?? 'flat'))) {
+    return detail;
+  }
+  return {
+    ...detail,
+    units: units.map((u) => {
+      const kind = (u as { kind?: string }).kind ?? 'flat';
+      if (!FABRIC_KINDS.has(kind)) return u;
+      const copy = { ...(u as unknown as Record<string, unknown>) };
+      for (const k of IDENTITY_FIELDS) delete copy[k];
+      return copy as unknown as UnitLike;
+    }),
+  };
+}
+
+/**
+ * What a citizen is told about the building their flat stands in: enough to
+ * name it and draw it, and nothing that identifies it as a registered
+ * holding of someone else's. The tower's own ULPIN and the developer who
+ * owns the plot are not theirs to read.
+ */
+const CITIZEN_BUILDING_FIELDS = [
+  'id', 'name', 'address', 'footprint', 'height_m', 'floors', 'basements',
+  'ground_elev', 'ground_source', 'use_type', 'height_source', 'parcel_id',
+  'survey_synthetic', 'osm_id',
+] as const;
+
+/** The subset of a floor row this module narrows. */
+interface FloorLike {
+  level_no: number;
+  ulpin?: string;
+}
 
 /**
  * Narrow a building detail document to what the caller may see.
  *
- * Gov and anon get it verbatim. A citizen gets their building, all of its
- * floors, and the SHAPE of every flat -- but the register behind a
- * neighbour's door is redacted: no ULPIN, no owner, no address, no areas, no
- * tenure or encumbrance. They keep `unit_no`, because a door number is
- * written on the door and the floor would be unreadable without it.
+ * Gov and anon get it verbatim. A CITIZEN GETS THEIR FLAT AND NOTHING ELSE:
  *
- * Shown-but-redacted rather than removed, because a citizen is meant to be
- * able to look at their building and their floor. Deleting the neighbours
- * left them standing in an empty plate, which is a less honest picture of
- * where they live than four flats of which one is theirs.
+ *   floors    only the level their flat is on, and without its ULPIN;
+ *   units     their own flat, with its whole register entry, plus the parking
+ *             bay that entry allocates to it -- the bay is a term of THEIR
+ *             title, and the certificate prints it;
+ *   building  name, address and massing (see CITIZEN_BUILDING_FIELDS); no
+ *             identifier, no owner;
+ *   parcel    dropped. The plot belongs to the developer.
+ *
+ * This REVERSES the earlier shown-but-redacted design, which kept every
+ * neighbour's flat as an anonymous box and every floor as a rung. That was
+ * argued for as the more honest picture of where a person lives, and it was;
+ * but it also let a citizen page every level of the tower and read every
+ * door number, and the product decision is now that the owner's view is the
+ * owner's flat -- the other floors and flats are not theirs to browse at all.
  *
  * Done here, on the server, and not in the viewer: anyone can read a
  * response in devtools, so a filter that runs in the browser is decoration.
  */
 export function filterDetailForCaller<
-  T extends { units?: UnitLike[]; floors?: unknown[] },
+  T extends { units?: UnitLike[]; floors?: FloorLike[]; building?: unknown; parcel?: unknown },
 >(ctx: CallerContext, detail: T): T {
   if (ctx.kind !== 'citizen') return detail;
   const units = Array.isArray(detail.units) ? detail.units : [];
-  // Floors carry only geometry and label data today -- z-range, the
-  // per-floor ULPIN, the level number, the floor plan -- nothing that
-  // names who lives on the floor. They are passed through unchanged,
-  // but the type carries the field explicitly so a future per-floor
-  // sensitive field would surface here as a type error, not as a leak.
+  const floors = Array.isArray(detail.floors) ? detail.floors : [];
+
+  const own = units.find((u) => ownsUnit(ctx, u));
+  const bayUlpin = (own as { parking_ulpin?: string } | undefined)?.parking_ulpin;
+  const bay = bayUlpin
+    ? units.find((u) => (u as { ulpin?: string }).ulpin === bayUlpin)
+    : undefined;
+
+  const building = detail.building && typeof detail.building === 'object'
+    ? (() => {
+      const src = detail.building as Record<string, unknown>;
+      const out: Record<string, unknown> = {};
+      for (const k of CITIZEN_BUILDING_FIELDS) if (k in src) out[k] = src[k];
+      return out;
+    })()
+    : detail.building;
+
+  const { parcel: _parcel, ...rest } = detail;
+  void _parcel;
   return {
-    ...detail,
-    units: units.map((u) => {
-      if (ownsUnit(ctx, u)) return u;
-      const source = u as unknown as Record<string, unknown>;
-      const redacted: Record<string, unknown> = { restricted: true };
-      for (const k of PUBLIC_UNIT_FIELDS) {
-        if (k in source) redacted[k] = source[k];
-      }
-      return redacted as unknown as UnitLike;
-    }),
-  };
+    ...rest,
+    building,
+    floors: floors
+      .filter((f) => f.level_no === ctx.floor)
+      .map((f) => {
+        const { ulpin: _u, ...keep } = f;
+        void _u;
+        return keep as FloorLike;
+      }),
+    units: [own, bay].filter((u): u is UnitLike => u !== undefined),
+  } as unknown as T;
 }
 
 /**

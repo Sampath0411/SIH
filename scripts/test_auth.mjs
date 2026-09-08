@@ -29,7 +29,7 @@ const { encodeSession, decodeSession, makeCitizenSession, makeGovSession,
   _resetForTests, buildSetCookie, buildClearCookie } =
   await import('../lib/auth/session.ts');
 const { checkBuildingAccess, checkMutation, checkProjectAccess,
-  isMutator, ownsUnit, filterDetailForCaller, callerContext: _cc } =
+  isMutator, ownsUnit, filterDetailForCaller, stripCoreIdentity, callerContext: _cc } =
   await import('../lib/auth/access-pure.ts');
 const { callerTagFromCookie, callerTagFromCtx } = await import('../lib/http/caller-tag.ts');
 
@@ -374,7 +374,7 @@ await test('ownsUnit: matches on (level, code), not on id', () => {
   assert.equal(ownsUnit({ kind: 'anon' }, { level_no: 9, unit_no: '903' }), true);
 });
 
-await test('filterDetailForCaller: a citizen keeps every flat, but only one is readable', async () => {
+await test('filterDetailForCaller: a citizen gets their flat, their floor, and nothing else', async () => {
   const raw = await fs.readFile(
     path.join(process.cwd(), 'data', 'api', 'siripuram', 'detail.json'),
     'utf-8',
@@ -384,27 +384,28 @@ await test('filterDetailForCaller: a citizen keeps every flat, but only one is r
   assert.ok(detail.units.length > 1, 'the demo tower must hold more than one flat');
 
   const mine = filterDetailForCaller(RAVI, detail);
-  // Every flat is still there -- the citizen can see their whole building.
-  assert.equal(mine.units.length, detail.units.length);
-  // The floors survive too: the flat is shown inside a real building.
-  assert.equal(mine.floors.length, detail.floors.length);
+  // ONE floor -- theirs -- and it carries no identifier.
+  assert.equal(mine.floors.length, 1, `expected 1 floor, got ${mine.floors.length}`);
+  assert.equal(mine.floors[0].level_no, 2);
+  assert.equal(mine.floors[0].ulpin, undefined, 'the floor ULPIN is not theirs to read');
 
-  const own = mine.units.filter((u) => !u.restricted);
-  assert.equal(own.length, 1, `expected 1 readable flat, got ${own.length}`);
-  assert.equal(own[0].unit_no, '201');
-  assert.equal(own[0].owner, 'Ravi Kumar');
-  assert.ok(own[0].ulpin, 'the citizen keeps their own ULPIN');
+  // ONE flat -- theirs -- with its register intact. (Without the register
+  // merged on there is no parking_ulpin, so no bay comes with it here; the
+  // next test covers the merged document.)
+  assert.equal(mine.units.length, 1, `expected 1 unit, got ${mine.units.length}`);
+  const own = mine.units[0];
+  assert.equal(own.unit_no, '201');
+  assert.equal(own.owner, 'Ravi Kumar');
+  assert.ok(own.ulpin, 'the citizen keeps their own ULPIN');
+  assert.equal(own.restricted, undefined);
 
-  // Every other flat keeps its shape and loses its register entry.
-  for (const u of mine.units.filter((x) => x.restricted)) {
-    assert.ok(u.ring, `flat ${u.unit_no} must keep its geometry`);
-    assert.ok(typeof u.level_no === 'number', 'and its level');
-    for (const field of ['ulpin', 'owner', 'address', 'carpet_m2',
-      'built_m2', 'tenure', 'encumbrance', 'facing']) {
-      assert.equal(u[field], undefined,
-        `restricted flat ${u.unit_no} must not carry ${field}`);
-    }
-  }
+  // The building is named and drawable, and not identified.
+  assert.equal(mine.building.name, 'Sampath Skyline');
+  assert.ok(mine.building.footprint, 'the massing survives');
+  assert.equal(mine.building.floors, 20);
+  assert.equal(mine.building.ulpin, undefined, 'the tower ULPIN is not theirs');
+  assert.equal(mine.building.owner, undefined);
+  assert.equal(mine.parcel, undefined, 'the plot is the developer\'s');
 
   // Belt and braces: no neighbour's ULPIN survives anywhere in the payload.
   const serialised = JSON.stringify(mine);
@@ -414,10 +415,42 @@ await test('filterDetailForCaller: a citizen keeps every flat, but only one is r
       `neighbour flat ${code}'s ULPIN must not appear in a citizen's document`,
     );
   }
-  // Nor any neighbour's name.
-  for (const name of ['Meena Patnaik', 'Joseph Fernandes', 'Sanjay Varma']) {
+  // Nor any neighbour's name, nor the developer's.
+  for (const name of ['Meena Patnaik', 'Joseph Fernandes', 'Sanjay Varma',
+    'Sampath Estates']) {
     assert.ok(!serialised.includes(name), `${name} must not appear`);
   }
+  // Nor any other level: the floor ladder must have exactly one rung to draw.
+  assert.ok(!serialised.includes('"level_no":5'), 'no other floor survives');
+});
+
+await test('stripCoreIdentity: fabric volumes carry no identifier for anyone', async () => {
+  const detail = JSON.parse(await fs.readFile(
+    path.join(process.cwd(), 'data', 'api', 'siripuram', 'detail.json'), 'utf-8',
+  ))['999'];
+  // Simulate the PostGIS row, where ulpin is NOT NULL and so is minted.
+  const withIds = {
+    ...detail,
+    units: detail.units.map((u) => (u.core_ref
+      ? { ...u, ulpin: 'AP-VSP-3D26-9999-001-05-EV', carpet_m2: 4, tenure: 'Common area' }
+      : u)),
+  };
+  const out = stripCoreIdentity(withIds);
+  const cores = out.units.filter((u) => u.core_ref);
+  assert.ok(cores.length > 0, 'the tower has cores');
+  for (const c of cores) {
+    assert.equal(c.ulpin, undefined, 'a core segment has no ULPIN');
+    assert.equal(c.carpet_m2, undefined);
+    assert.equal(c.tenure, undefined);
+    assert.ok(c.kind && c.core_ref && c.ring, 'and keeps what it is');
+  }
+  // Flats and bays are untouched.
+  const flat = out.units.find((u) => u.unit_no === '502');
+  assert.ok(flat.ulpin && flat.owner, 'a flat keeps its identity');
+  const bay = out.units.find((u) => u.kind === 'parking');
+  assert.ok(bay.ulpin, 'a bay keeps its identity');
+  // Gov sees the same stripped document as anyone else.
+  assert.equal(filterDetailForCaller({ kind: 'gov' }, out).units.length, out.units.length);
 });
 
 await test('filterDetailForCaller: the flat register is redacted with the flat', async () => {
@@ -446,15 +479,14 @@ await test('filterDetailForCaller: the flat register is redacted with the flat',
   }
 
   const mine = filterDetailForCaller(RAVI, merged);
-  const own = mine.units.find((u) => !u.restricted);
+  const own = mine.units.find((u) => u.unit_no === '201');
   assert.ok(own.ownership, 'the citizen keeps their own ownership status');
   assert.ok(own.tax, 'and their own tax record');
-  for (const u of mine.units.filter((x) => x.restricted)) {
-    for (const field of ['ownership', 'title_deed', 'registered_on', 'mortgage', 'tax', 'bills']) {
-      assert.equal(u[field], undefined,
-        `restricted flat ${u.unit_no} must not carry ${field}`);
-    }
-  }
+  // The bay their title allocates comes with the flat, and nothing else does.
+  assert.ok(own.parking_ulpin, 'every flat has a bay');
+  assert.equal(mine.units.length, 2, `flat + bay, got ${mine.units.length}`);
+  const bay = mine.units.find((u) => u.kind === 'parking');
+  assert.equal(bay.ulpin, own.parking_ulpin);
   // No neighbour's loan account or assessment number anywhere in the payload.
   const serialised = JSON.stringify(mine);
   for (const [key, entry] of Object.entries(register)) {
@@ -486,22 +518,36 @@ await test('Every flat carries owner and address', async () => {
     'utf-8',
   );
   const detail = JSON.parse(raw)['999'];
-  for (const u of detail.units) {
+  // FLATS. The tower also holds bays, cores, aisles and a plant room, and
+  // none of those has an owner -- that is the point of them.
+  const flats = detail.units.filter((u) => (u.kind ?? 'flat') === 'flat');
+  assert.equal(flats.length, 80);
+  for (const u of flats) {
     assert.ok(u.owner, `flat ${u.unit_no} has no owner`);
     assert.ok(u.address?.includes(u.unit_no), `flat ${u.unit_no} has no matching address`);
+    assert.ok(u.ulpin, `flat ${u.unit_no} has no ULPIN`);
   }
   // Four flats per residential floor, each with its own footprint.
   const byLevel = new Map();
-  for (const u of detail.units) {
+  for (const u of flats) {
     byLevel.set(u.level_no, (byLevel.get(u.level_no) ?? 0) + 1);
   }
   for (const [level, n] of byLevel) {
     assert.equal(n, 4, `level ${level} has ${n} flats, expected 4`);
   }
-  const rings = new Set(detail.units
+  const rings = new Set(flats
     .filter((u) => u.level_no === 2)
     .map((u) => JSON.stringify(u.ring)));
   assert.equal(rings.size, 4, 'the four flats on a floor must have distinct footprints');
+  // One bay per flat, and no two flats share one.
+  const bays = new Set(detail.units.filter((u) => u.kind === 'parking').map((u) => u.ulpin));
+  assert.equal(bays.size, 80, 'eighty bays for eighty flats');
+  // Fabric carries no identity.
+  for (const u of detail.units) {
+    if (['elevator', 'stair', 'circulation', 'plant'].includes(u.kind)) {
+      assert.equal(u.ulpin, undefined, `${u.unit_no} on level ${u.level_no} must have no ULPIN`);
+    }
+  }
 });
 
 // ---- the residents roster must match the flats that exist ------------------

@@ -16,7 +16,7 @@ import {
 } from '@/lib/cache/store';
 import {
   callerContext, enforceBuildingAccess, enforceProjectAccess,
-  filterDetailForCaller, filterLadmForCaller, ownsSpatialUnit, refuseMutation,
+  filterLadmForCaller, narrowDetailForCaller, ownsSpatialUnit, refuseMutation,
 } from '@/lib/auth/access';
 import type { GeoFC } from '@/lib/types';
 
@@ -173,7 +173,23 @@ export function buildingsRoute(slug: string, req: Request) {
   return serve(slug, 'buildings', getBuildings, req, {}, filterBuildingsForCitizen);
 }
 
-/** Citizen view: only the one building they own. */
+/**
+ * The identifying fields a citizen's collection features lose.
+ *
+ * The building document already withholds the tower's ULPIN and the plot's
+ * owner (filterDetailForCaller); the FeatureCollections carry the same two
+ * facts in their properties, and the status bar and the parcel inset print
+ * from those. One list, applied to both, so the two routes cannot disagree.
+ */
+const CITIZEN_FEATURE_STRIP = ['ulpin', 'owner', 'ulpin_14', 'owner_name'] as const;
+
+function stripFeatureIdentity<F extends { properties: unknown }>(f: F): F {
+  const props = { ...(f.properties as Record<string, unknown>) };
+  for (const k of CITIZEN_FEATURE_STRIP) delete props[k];
+  return { ...f, properties: props };
+}
+
+/** Citizen view: only the one building they own, and not its identifier. */
 function filterBuildingsForCitizen(
   value: GeoFC,
   ctx: { kind: 'citizen'; buildingId: number; slug: string },
@@ -181,10 +197,9 @@ function filterBuildingsForCitizen(
   const features = Array.isArray(value.features) ? value.features : [];
   return {
     ...value,
-    features: features.filter((f) => {
-      const id = (f.properties as { id?: number } | null)?.id;
-      return id === ctx.buildingId;
-    }),
+    features: features
+      .filter((f) => (f.properties as { id?: number } | null)?.id === ctx.buildingId)
+      .map(stripFeatureIdentity),
   };
 }
 
@@ -213,10 +228,9 @@ async function filterParcelsForCitizen(
   }
   return {
     ...value,
-    features: features.filter((f) => {
-      const id = (f.properties as { id?: number } | null)?.id;
-      return id === parcelId;
-    }),
+    features: features
+      .filter((f) => (f.properties as { id?: number } | null)?.id === parcelId)
+      .map(stripFeatureIdentity),
   };
 }
 
@@ -461,7 +475,7 @@ export async function buildingDetailRoute(
     // dropped here, on the server, before the document is serialised --
     // filtering them in the viewer would leave every ULPIN, area and
     // encumbrance in the response body for anyone with devtools open.
-    return await jsonPayload(req, filterDetailForCaller(ctx, detail), {
+    return await jsonPayload(req, narrowDetailForCaller(ctx, detail), {
       resource: `${slug}:building:${id}`,
       rev: String(editsRev(slug)),
       headers: withCacheHeader(await baseHeaders(slug), cache),
@@ -525,13 +539,16 @@ export async function buildingSummaryRoute(
         { status: 404, headers: withCacheHeader(await baseHeaders(slug), cache) },
       );
     }
+    // Narrowed like the full document: a citizen's summary names their
+    // building and counts their own floor and flat, not the tower's.
+    const visible = narrowDetailForCaller(ctx, detail);
     return await jsonPayload(
       req,
       {
-        building: detail.building,
-        parcel: detail.parcel,
-        floor_count: detail.floors.length,
-        unit_count: detail.units.length,
+        building: visible.building,
+        parcel: visible.parcel,
+        floor_count: visible.floors.length,
+        unit_count: visible.units.length,
       },
       {
         resource: `${slug}:building-summary:${id}`,
@@ -567,7 +584,10 @@ export async function buildingFloorsRoute(
         { status: 404, headers: withCacheHeader(await baseHeaders(slug), cache) },
       );
     }
-    return await jsonPayload(req, { building_id: id, floors: detail.floors }, {
+    // Through the same narrowing as the full document, or a citizen could
+    // read every floor's ULPIN here that /building/:id refuses them.
+    const floors = narrowDetailForCaller(ctx, detail).floors;
+    return await jsonPayload(req, { building_id: id, floors }, {
       resource: `${slug}:building-floors:${id}`,
       rev: String(editsRev(slug)),
       headers: withCacheHeader(await baseHeaders(slug), cache),
@@ -626,7 +646,7 @@ export async function buildingUnitsRoute(
     }
     // Role first, then the level filter: a citizen paging this endpoint must
     // not be able to walk their neighbours' flats one page at a time.
-    const visible = filterDetailForCaller(ctx, detail).units;
+    const visible = narrowDetailForCaller(ctx, detail).units;
     const matching = level === null
       ? visible
       : visible.filter((u) => u.level_no === level);

@@ -3,7 +3,7 @@ import { currentSession } from './guards';
 import {
   checkBuildingAccess, checkMutation, checkProjectAccess,
   filterDetailForCaller, filterLadmForCaller, isMutator, ownsSpatialUnit,
-  ownsUnit, type CallerContext,
+  ownsUnit, stripCoreIdentity, type CallerContext,
 } from './access-pure';
 
 /**
@@ -45,7 +45,18 @@ export async function callerContext(req: Request): Promise<CallerContext> {
 }
 
 /** True when this caller may write to the cadastre. */
-export { isMutator, ownsUnit, filterDetailForCaller };
+export { isMutator, ownsUnit, filterDetailForCaller, stripCoreIdentity };
+
+/**
+ * Every building document leaves through this: fabric volumes lose their
+ * identity for everyone, then the citizen narrowing applies. One function so
+ * a route cannot pick up one half and forget the other.
+ */
+export function narrowDetailForCaller<
+  T extends Parameters<typeof filterDetailForCaller>[1],
+>(ctx: CallerContext, detail: T): T {
+  return filterDetailForCaller(ctx, stripCoreIdentity(detail));
+}
 // The LADM half of the same rules. Re-exported here rather than imported from
 // access-pure.ts at the call sites, so a handler has ONE module to reach for
 // and cannot pick up the pure version of one rule and the wrapped version of
