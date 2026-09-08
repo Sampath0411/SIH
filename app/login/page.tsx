@@ -82,9 +82,9 @@ export default async function LoginPage({
             Citizen or government?
           </h1>
           <p className="mt-2 text-[12px] leading-relaxed text-muted">
-            A citizen sees their own building, their floor, and the underground
-            parking. A government official sees the full AOI as today, with the
-            same controls.
+            A citizen sees their own flat, its parking bay and its certificate,
+            and nothing else in the building. A government official sees the
+            full AOI, with every control.
           </p>
         </div>
         <LoginForm
@@ -94,10 +94,16 @@ export default async function LoginPage({
         />
         {showDemoCreds ? (
           <p className="mt-6 text-center text-[11px] leading-relaxed text-muted">
-            Demo accounts:
+            Demo residents of Sampath Skyline:
             <br />
-            <span className="font-mono text-ink">Aadhar 111122223333 / phone 9876543210</span>
-            {' '}· Aadhar 222233334444 / phone 9876543211 · Aadhar 333344445555 / phone 9876543212
+            Flat 201, Ravi Kumar ·{' '}
+            <span className="font-mono text-ink">111122223333 / 9876543210</span>
+            <br />
+            Flat 502, Priya Sharma ·{' '}
+            <span className="font-mono text-ink">222233334444 / 9876543211</span>
+            <br />
+            Flat 903, Anand Rao ·{' '}
+            <span className="font-mono text-ink">333344445555 / 9876543212</span>
             <br />
             Government: <span className="font-mono text-ink">admin@sampath.gov.in</span> /
             {' '}<span className="font-mono text-ink">ulpin-gov-2026</span>

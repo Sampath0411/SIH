@@ -26,15 +26,69 @@ export default function FloorLadder({
   const activeBuildingId = useViewStore((s) => s.activeBuildingId);
   const isolatedFloor = useViewStore((s) => s.isolatedFloor);
   const isolateFloor = useViewStore((s) => s.isolateFloor);
+  const citizen = useViewStore((s) => s.session.role === 'citizen');
   const detail = useEnsureDetail(mode === 'city' ? null : activeBuildingId);
 
   if (mode === 'city' || !detail || detail.floors.length === 0) return null;
 
   // Top of the building first, basements last -- the way a lift panel reads.
   const floors = [...detail.floors].sort((a, b) => b.level_no - a.level_no);
-  const top = floors[0]?.level_no ?? 0;
+  // The building's real top, for the 'R' label -- not the top of whatever
+  // subset of floors the caller was served.
+  const top = detail.building.floors ?? floors[0]?.level_no ?? 0;
 
   const horizontal = orientation === 'horizontal';
+
+  /** A rung's tooltip: what is on the level, and how deep it is if below. */
+  const tooltipFor = (level: number): string => {
+    const on = detail.units.filter((u) => u.level_no === level);
+    const flats = on.filter((u) => (u.kind ?? 'flat') === 'flat').length;
+    const bays = on.filter((u) => u.kind === 'parking').length;
+    const what = flats ? `${flats} flat${flats === 1 ? '' : 's'}`
+      : bays ? `${bays} parking bay${bays === 1 ? '' : 's'}`
+        : on.some((u) => u.kind === 'plant') ? 'plant and tankage'
+          : level === 0 ? 'entrance lobby' : 'no units';
+    const f = detail.floors.find((x) => x.level_no === level);
+    const depth = f && level < 0 && detail.building.ground_elev !== undefined
+      ? ` · ${(detail.building.ground_elev - f.z_min).toFixed(1)} m below ground`
+      : '';
+    return `Level ${levelLabel(level, top)} · ${what}${depth}`;
+  };
+
+  // A citizen is served one floor -- theirs -- and the ladder says so rather
+  // than pretending to be a control with one setting. Not a button: there is
+  // nothing else to go to, and "all" would show them a stack they were not
+  // served.
+  if (citizen) {
+    const f = floors[0];
+    return (
+      <div
+        data-panel="floors"
+        className={[
+          'glass pointer-events-auto rounded-lg p-1.5',
+          horizontal ? 'flex items-center gap-2' : '',
+        ].join(' ')}
+      >
+        <div
+          className={[
+            'text-[9px] uppercase tracking-widest text-[rgb(var(--muted))]',
+            horizontal ? 'shrink-0 pl-1' : 'px-1 pb-1 text-center',
+          ].join(' ')}
+        >
+          Your floor
+        </div>
+        <div
+          title={tooltipFor(f.level_no)}
+          className={[
+            'is-active grid shrink-0 place-items-center rounded text-[11px] font-medium',
+            horizontal ? 'h-9 w-11' : 'h-6 w-9',
+          ].join(' ')}
+        >
+          {levelLabel(f.level_no, top)}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -66,8 +120,8 @@ export default function FloorLadder({
             <button
               key={f.id}
               type="button"
-              title={`${f.ulpin} · ${f.z_min.toFixed(1)}–${f.z_max.toFixed(1)} m`}
-              aria-label={`${levelLabel(f.level_no, top)} (${f.ulpin})`}
+              title={tooltipFor(f.level_no)}
+              aria-label={`Level ${levelLabel(f.level_no, top)}`}
               aria-pressed={active}
               onClick={() => isolateFloor(active ? null : f.level_no)}
               className={[

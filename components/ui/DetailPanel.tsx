@@ -30,6 +30,8 @@ import {
 import { resolveCategoryDepths } from '@/lib/underground/layout';
 import { codesOf, generate, levelLabel, parentOf } from '@/lib/ulpin';
 import { orientedDims, ringCentroid } from '@/lib/geo';
+import { coreNoun, coreSpan } from '@/lib/cesium/cores';
+import { depthBelowGround } from '@/lib/cesium/basement-lift';
 import type {
   Provenance, RoadProps, SurveyParcelDetail, SurveyParcelProps, UtilityProps,
 } from '@/lib/types';
@@ -398,8 +400,8 @@ const UNIT_KINDS: Record<string, { noun: string; kicker: string; titled: boolean
   parking:     { noun: 'Parking slot', kicker: 'Appurtenant space', titled: false },
   circulation: { noun: '',             kicker: 'Common space',      titled: false },
   atrium:      { noun: '',             kicker: 'Common space',      titled: false },
-  elevator:    { noun: '',             kicker: 'Structural core',   titled: false },
-  stair:       { noun: '',             kicker: 'Structural core',   titled: false },
+  elevator:    { noun: 'Lift',         kicker: 'Structural core · common property', titled: false },
+  stair:       { noun: 'Staircase',    kicker: 'Structural core · common property', titled: false },
   plant:       { noun: '',             kicker: 'Plant space',       titled: false },
 };
 
@@ -1100,12 +1102,74 @@ export default function DetailPanel() {
       const ring = (unit.ring?.coordinates as number[][][] | undefined)?.[0];
       const centre = ring && ring.length > 1 ? ringCentroid(ring) : null;
       const kindInfo = unitKindOf(unit.kind);
+
+      // ---- a vertical core ------------------------------------------------
+      // A lift shaft or a staircase. It has no identifier, no holder, no
+      // tenure and no certificate: it is building fabric, held in common,
+      // and the card says what it is and how far it runs -- the whole shaft,
+      // which is what the viewer is drawing, not the one storey of it that
+      // happened to be under the cursor.
+      const core = unit.core_ref ? coreSpan(detail.units, unit.core_ref) : null;
+      if (core) {
+        const top = bprops.floors - 1;
+        const noun = coreNoun(core.kind);
+        const shaftM = core.z_max - core.z_min;
+        const footprint = ring && ring.length > 3 ? orientedDims(ring) : null;
+        return (
+          <Panel title={noun} kicker="Structural core · common property">
+            <p className="mt-1 text-[12px] leading-relaxed text-muted">
+              {core.label ?? `${noun} core`}. Held in common by the owners'
+              association; not separately titled, so it carries no 3D ULPIN,
+              no holder and no certificate.
+            </p>
+            <Section title="The shaft">
+              <Row
+                label="Serves"
+                value={`${levelLabel(core.lowest, top)} to ${levelLabel(core.highest, top)} · ${core.levels} levels`}
+                source="derived"
+              />
+              <Row label="Shaft height" value={m(shaftM)} source="derived" />
+              {footprint ? (
+                <Row
+                  label="Footprint"
+                  value={`${footprint.lengthM.toFixed(1)} × ${footprint.widthM.toFixed(1)} m`}
+                  source="derived"
+                />
+              ) : null}
+              <Row
+                label="Z extent"
+                value={`${core.z_min.toFixed(2)} → ${core.z_max.toFixed(2)} m`}
+              />
+              <Row label="Selected at" value={`Level ${levelLabel(unit.level_no, top)}`} />
+            </Section>
+            <ProvenanceRow
+              source={(floor?.detect_source ?? bprops.height_source) as Provenance}
+              synthetic={synthetic}
+              note={
+                'The core is stored as one segment per level it passes through, '
+                + 'and drawn here as one shaft. Its position is taken from the '
+                + 'surveyed plan; nothing about it is a registered right.'
+              }
+            />
+          </Panel>
+        );
+      }
       // Every segment of the same core, so the panel can report the span the
       // shaft actually covers instead of describing one storey of it as if
       // that were the whole thing.
       const coreSegments = unit.core_ref
         ? detail.units.filter((u) => u.core_ref === unit.core_ref)
         : [];
+      // A parking bay: which flat's title it is a term of. The bay carries
+      // no owner (it is not separately titled); the FLAT's register names
+      // the bay, so the answer is a reverse lookup over the flats served.
+      const reservedFor = unit.kind === 'parking' && unit.ulpin
+        ? detail.units.find((u) => u.parking_ulpin === unit.ulpin) ?? null
+        : null;
+      // The bay this flat's title allocates, for the Parking section.
+      const bay = kindInfo.titled && unit.parking_ulpin
+        ? detail.units.find((u) => u.ulpin === unit.parking_ulpin) ?? null
+        : null;
       const bills = unit.bills ?? [];
       const billsDue = bills.filter((b) => !b.paid);
       const taxDue = unit.tax ? Math.max(0, unit.tax.demand_inr - unit.tax.paid_inr) : 0;
@@ -1207,19 +1271,51 @@ export default function DetailPanel() {
               label="Z extent"
               value={`${unit.z_min.toFixed(2)} → ${unit.z_max.toFixed(2)} m`}
             />
-            <Row
-              label="Parent building"
-              value={<span className="font-mono text-[11px]">{bprops.ulpin}</span>}
-            />
-            <Row
-              label="Parent parcel"
-              value={
-                <span className="font-mono text-[11px]">
-                  {detail.parcel?.ulpin ?? (unit.ulpin ? parentOf(unit.ulpin) : null) ?? '—'}
-                </span>
-              }
-            />
+            {bprops.ulpin ? (
+              <Row
+                label="Parent building"
+                value={<span className="font-mono text-[11px]">{bprops.ulpin}</span>}
+              />
+            ) : null}
+            {detail.parcel || bprops.ulpin ? (
+              <Row
+                label="Parent parcel"
+                value={
+                  <span className="font-mono text-[11px]">
+                    {detail.parcel?.ulpin ?? (unit.ulpin ? parentOf(unit.ulpin) : null) ?? '—'}
+                  </span>
+                }
+              />
+            ) : null}
           </Section>
+
+          {/*
+            THE BAY THIS TITLE CARRIES. Every flat in the demo tower has one,
+            allocated in the register and bundled into the flat's LA_BAUnit as
+            an appurtenant member; this is the same fact, where a holder
+            looks for it. The bay's own identifier is printed because the
+            certificate prints it, and the two must agree.
+          */}
+          {kindInfo.titled && unit.parking_ulpin ? (
+            <Section title="Parking">
+              <Row label="Bay" value={unit.parking_label ?? bay?.label ?? unit.parking_ulpin} />
+              <Row
+                label="Bay 3D ULPIN"
+                value={<span className="font-mono text-[11px]">{unit.parking_ulpin}</span>}
+              />
+              <Row
+                label="Bay level"
+                value={(() => {
+                  const lvl = bay?.level_no ?? unit.parking_level;
+                  return lvl === undefined ? '—' : `Level ${levelLabel(lvl, bprops.floors - 1)}`;
+                })()}
+              />
+              {bay?.built_m2 !== undefined ? (
+                <Row label="Bay area" value={m2(bay.built_m2)} />
+              ) : null}
+              <Row label="Held as" value="Appurtenant to this flat" />
+            </Section>
+          ) : null}
 
           <Section title={kindInfo.titled ? 'The unit' : 'The space'}>
             <Row label="Carpet area" value={m2(unit.carpet_m2 ?? 0)} />
@@ -1257,6 +1353,14 @@ export default function DetailPanel() {
           {!kindInfo.titled ? (
             <Section title="Tenure">
               <Row label="Held as" value={unit.tenure ?? '—'} />
+              {unit.kind === 'parking' ? (
+                <Row
+                  label="Reserved for"
+                  value={reservedFor
+                    ? `Flat ${reservedFor.unit_no}${reservedFor.owner ? ` · ${reservedFor.owner}` : ''}`
+                    : 'Not allocated'}
+                />
+              ) : null}
               <p className="mt-1 text-[11px] leading-relaxed text-muted">
                 {unit.kind === 'parking'
                   ? 'Allocated parking, appurtenant to a flat rather than '
@@ -1426,25 +1530,55 @@ export default function DetailPanel() {
       // flats they may see, and inferring a neighbour's area from a total
       // would undo the redaction the server just applied.
       const gross = units.reduce((a, u) => a + (u.built_m2 ?? 0), 0);
+      // What is on the level, by kind, in words: '4 flats · lift · stairs'.
+      const onLevel = (() => {
+        const n = (k: string) => units.filter((u) => (u.kind ?? 'flat') === k).length;
+        const parts: string[] = [];
+        if (n('flat')) parts.push(`${n('flat')} flat${n('flat') === 1 ? '' : 's'}`);
+        if (n('parking')) parts.push(`${n('parking')} parking bays`);
+        if (n('retail') + n('anchor')) parts.push(`${n('retail') + n('anchor')} shops`);
+        if (n('circulation') && floor.level_no >= 0) parts.push('lobby');
+        if (n('circulation') && floor.level_no < 0) parts.push('drive aisles');
+        if (n('plant')) parts.push('plant room');
+        if (n('elevator')) parts.push('lift');
+        if (n('stair')) parts.push('stairs');
+        return parts.length ? parts.join(' · ') : '— (non-habitable)';
+      })();
+      const basement = floor.level_no < 0;
       return (
         <Panel
           title={`Level ${levelLabel(floor.level_no, bprops.floors - 1)}`}
-          kicker={floor.level_no < 0 ? 'Basement level' : 'Floor level'}
+          kicker={basement ? 'Basement level' : 'Floor level'}
         >
-          <UlpinCard ulpin={floor.ulpin} />
+          {floor.ulpin ? <UlpinCard ulpin={floor.ulpin} /> : null}
+          {basement && !underground ? (
+            <p className="mt-2 text-[11px] leading-relaxed text-muted">
+              Shown lifted above ground so the plan can be read. The ring
+              marks true ground level; the depth below is from the stored
+              heights, which are unchanged.
+            </p>
+          ) : null}
           <div className="mt-2">
             <Row label="Level number" value={floor.level_no} />
+            {basement ? (
+              <Row
+                label="Depth below ground"
+                value={m(depthBelowGround(bprops.ground_elev, floor.z_min))}
+              />
+            ) : null}
             <Row
               label="Z extent"
               value={`${floor.z_min.toFixed(2)} → ${floor.z_max.toFixed(2)} m`}
             />
             <Row label="Slab height" value={m(floor.z_max - floor.z_min)} />
-            <Row label="Units on level" value={units.length || '— (non-habitable)'} />
+            <Row label="On this level" value={onLevel} />
             {gross > 0 ? <Row label="Total built-up" value={m2(gross)} /> : null}
-            <Row
-              label="Parent building"
-              value={<span className="font-mono text-[11px]">{bprops.ulpin}</span>}
-            />
+            {bprops.ulpin ? (
+              <Row
+                label="Parent building"
+                value={<span className="font-mono text-[11px]">{bprops.ulpin}</span>}
+              />
+            ) : null}
           </div>
           <ProvenanceRow source={floor.detect_source} synthetic={synthetic} />
         </Panel>
@@ -1459,6 +1593,51 @@ export default function DetailPanel() {
   // already behaves for them. Only a citizen is known to be refused.
   const canEdit = session.role !== 'citizen';
   const totalUnits = detail?.units.length ?? 0;
+
+  // A CITIZEN'S BUILDING CARD names the building and their flat, and stops.
+  // The server served them one floor and two volumes (their flat and its
+  // bay), so every total below -- units, areas, encumbrances, the parcel --
+  // would either be wrong or be a leak, and the tower's own identifier is
+  // not theirs to read.
+  if (session.role === 'citizen') {
+    const mine = detail?.units.find(
+      (u) => u.level_no === session.floor && u.unit_no === session.unit,
+    );
+    return (
+      <Panel title={bprops.name ?? `${bprops.use_type} building`} kicker="Your building">
+        <div className="mt-1">
+          {bprops.address ? <Row label="Address" value={bprops.address} /> : null}
+          <Row label="Storeys" value={`${bprops.floors} above ground`} />
+          <Row label="Basements" value={bprops.basements} />
+          <Row
+            label="Your flat"
+            value={session.unit
+              ? `Flat ${session.unit} · Level ${levelLabel(session.floor ?? 0, bprops.floors - 1)}`
+              : '—'}
+          />
+        </div>
+        <p className="mt-3 text-[11px] leading-snug text-[rgb(var(--muted))]">
+          {mine
+            ? 'Click your flat to open its record, its parking bay and its certificate.'
+            : 'Your flat is being located…'}
+        </p>
+      </Panel>
+    );
+  }
+
+  /** '20 storeys · 3 basements · 80 flats · 80 bays · lift + stairs'. */
+  const composition = (() => {
+    if (!detail) return null;
+    const n = (k: string) => detail.units.filter((u) => (u.kind ?? 'flat') === k).length;
+    const parts = [`${bprops.floors} storeys`];
+    if (bprops.basements) parts.push(`${bprops.basements} basement${bprops.basements === 1 ? '' : 's'}`);
+    if (n('flat')) parts.push(`${n('flat')} flats`);
+    if (n('retail') + n('anchor')) parts.push(`${n('retail') + n('anchor')} shops`);
+    if (n('parking')) parts.push(`${n('parking')} parking bays`);
+    const cores = [n('elevator') ? 'lift' : null, n('stair') ? 'stairs' : null].filter(Boolean);
+    if (cores.length) parts.push(cores.join(' + '));
+    return parts.join(' · ');
+  })();
   // Footprint dimensions: oriented bbox in metres. The buildings
   // FeatureCollection carries no footprint property -- only the per-building
   // detail document does -- so read the ring from there, not from bprops.
@@ -1530,7 +1709,12 @@ export default function DetailPanel() {
       }
     >
       <UnsavedBanner activeId={bprops.id} />
-      <UlpinCard ulpin={bprops.ulpin} />
+      {bprops.ulpin ? <UlpinCard ulpin={bprops.ulpin} /> : null}
+      {composition ? (
+        <p className="mt-2 text-[11px] leading-snug text-[rgb(var(--muted))]">
+          {composition}
+        </p>
+      ) : null}
 
       {savedRev !== null ? (
         <p role="status" className="mt-2 rounded border border-[rgb(var(--edge-strong))] bg-[rgb(var(--surface-2))] px-2 py-1 text-[11px] text-[rgb(var(--ink))]">

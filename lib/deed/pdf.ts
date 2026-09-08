@@ -15,7 +15,9 @@
  * department. The disclaimer sits under the identifier, in the body, not in a
  * footnote.
  */
-import { deedBoundsRows, deedRows, ladmRows, type DeedDoc } from './certificate.ts';
+import {
+  deedBoundsRows, deedParkingRows, deedRows, ladmRows, type DeedDoc,
+} from './certificate.ts';
 
 /** A4 portrait, in millimetres. */
 const PAGE = { w: 210, h: 297 };
@@ -111,8 +113,19 @@ export async function renderDeed(deed: DeedDoc): Promise<Blob> {
   // Past the QR block before the full-width section below.
   y = Math.max(y, MARGIN + QR_MM + 24);
 
+  // ---- appurtenant parking ----------------------------------------------
+  // Between the record and the extent: it is part of what the title carries,
+  // and it names a second identifier, so it sits under the first and is
+  // headed as what it is.
+  const parking = deedParkingRows(deed);
+  if (parking.length) {
+    y = breakIfNeeded(doc, y + 2, 24);
+    y = table(doc, 'Appurtenant parking', parking, MARGIN, y, contentW);
+  }
+
   // ---- spatial extent ---------------------------------------------------
-  y = table(doc, 'Spatial extent', deedBoundsRows(deed), MARGIN, y + 2, contentW);
+  y = breakIfNeeded(doc, y + 2, 30);
+  y = table(doc, 'Spatial extent', deedBoundsRows(deed), MARGIN, y, contentW);
 
   // ---- ISO 19152 --------------------------------------------------------
   // Omitted entirely when the volume is not in the registry, rather than

@@ -61,6 +61,7 @@ export default function TopBar({
   const selectBuilding = useViewStore((s) => s.selectBuilding);
   const statsOpen = useViewStore((s) => s.statsOpen);
   const setStatsOpen = useViewStore((s) => s.setStatsOpen);
+  const citizen = useViewStore((s) => s.session.role === 'citizen');
 
   const hits = useMemo<Hit[]>(() => {
     const term = query.trim().toLowerCase();
@@ -118,6 +119,8 @@ export default function TopBar({
         </span>
       </div>
 
+      {/* A citizen was served one building; there is nothing to search. */}
+      {citizen ? <div className="min-w-0 flex-1" /> : (
       <div className={`relative ml-1 min-w-0 flex-1 ${compact ? '' : 'sm:ml-2 sm:max-w-[300px]'}`}>
         <input
           value={query}
@@ -158,10 +161,13 @@ export default function TopBar({
           </div>
         ) : null}
       </div>
+      )}
 
       <div className="ml-auto flex shrink-0 items-center gap-1">
         {/* The active idiom is the one ActionBar and NavDock use, rather than
-            a third one invented here. */}
+            a third one invented here. Stats are project-wide, and a citizen
+            has no project to take statistics over. */}
+        {citizen ? null : (
         <button
           type="button"
           onClick={onStatsClick ?? (() => setStatsOpen(!statsOpen))}
@@ -176,6 +182,7 @@ export default function TopBar({
         >
           Stats
         </button>
+        )}
         <span className="ml-1 h-4 w-px bg-edge" />
         <SessionChip />
       </div>

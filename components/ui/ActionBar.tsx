@@ -22,6 +22,7 @@ export default function ActionBar() {
   const selectedUnitId = useViewStore((s) => s.selectedUnitId);
   const underground = useViewStore((s) => s.underground);
   const setUnderground = useViewStore((s) => s.setUnderground);
+  const citizen = useViewStore((s) => s.session.role === 'citizen');
   const selectUnit = useViewStore((s) => s.selectUnit);
   const isolateFloor = useViewStore((s) => s.isolateFloor);
   const selectBuilding = useViewStore((s) => s.selectBuilding);
@@ -50,18 +51,23 @@ export default function ActionBar() {
           {backLabel}
         </button>
       ) : null}
-      <button
-        type="button"
-        onClick={() => setUnderground(!underground)}
-        className={[
-          'rounded px-2 py-1 text-[11px] transition-colors',
-          underground
-            ? 'is-active'
-            : 'text-[rgb(var(--ink))] tint-hover',
-        ].join(' ')}
-      >
-        Underground
-      </button>
+      {/* The underground view is a way of looking at the services under a
+          cadastre. A citizen was served one flat; the view would show them
+          the translucent ground and nothing they were given to look at. */}
+      {citizen ? null : (
+        <button
+          type="button"
+          onClick={() => setUnderground(!underground)}
+          className={[
+            'rounded px-2 py-1 text-[11px] transition-colors',
+            underground
+              ? 'is-active'
+              : 'text-[rgb(var(--ink))] tint-hover',
+          ].join(' ')}
+        >
+          Underground
+        </button>
+      )}
     </div>
   );
 }

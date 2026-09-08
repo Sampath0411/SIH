@@ -492,6 +492,44 @@ reason the isolated floor does, and the architectural model steps aside because
 its opaque walls would hide the cut. Slice and Explode are mutually exclusive,
 enforced in the store rather than in the two controls.
 
+**An isolated basement is lifted into the light.** Below grade the level sits
+inside the terrain, so isolating B2 used to fly the camera under an opaque
+globe. Now the isolated basement's plate, shell and contents are drawn
+`FLOOR_VIEW.BASEMENT_LIFT_CLEAR_M` above the ground, in a cooler grey, with a
+ring at true ground level, a dashed tie-line down to the stored position and a
+caption quoting the stored depth (`B2 · 8.0 m below ground`). The lift is
+computed once, in `lib/cesium/basement-lift.ts`, and `FloorStackLayer`,
+`UnitsLayer` and `CameraDirector` all take the same number from it. Nothing
+stored moves; the depth on screen and in the panel is from the record.
+
+**A structural core carries no identity.** The lift shaft, the staircase, the
+lobby, the drive aisles and the plant room are building fabric held in common,
+not spatial units anyone holds. The demo seed writes them without a ULPIN,
+areas or tenure; PostGIS still needs one (`unit.ulpin` is `NOT NULL`), so
+`stripCoreIdentity` in `lib/auth/access-pure.ts` removes it on the way out for
+every caller and both backends serve the same document. Selecting a core
+segment draws ONE full-height bar from B2 to the roof in place of the
+per-level boxes (the rows stay per level: explode and section are per level),
+and the card describes the shaft with no ULPIN, no certificate and no Legal tab.
+
+**Every flat carries one parking bay.** B1 and B2 hold three banks of 2.4 m
+bays with two drive aisles, minus the two centre bays the cores pass through:
+40 per level, 80 in all, one per flat. The allocation is a register fact
+(`parking_ulpin` on the flat's entry), printed on the flat's card, bundled into
+its LA_BAUnit, and exported on the certificate as an *Appurtenant parking*
+block with the bay's own identifier. The seed refuses to write a register in
+which the bay and flat counts differ.
+
+**A citizen sees their flat and nothing else.** The building document served
+to a citizen holds their floor (without its ULPIN), their flat with its
+register entry, and the bay that entry allocates; the building keeps its name
+and massing and loses its identifier and owner; the parcel is dropped, and the
+buildings and parcels collections are stripped the same way. This reverses the
+earlier shown-but-redacted design on purpose: the owner's view is the owner's
+flat. The chrome follows the data -- one non-interactive rung, no layer,
+underground, stats, search, 2D GIS or slice controls -- and the tower stays as
+a faint shell so the plate has a building to belong to.
+
 ---
 
 ## API

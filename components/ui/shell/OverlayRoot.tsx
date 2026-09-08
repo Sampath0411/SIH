@@ -73,6 +73,32 @@ export default function OverlayRoot() {
    * still mounted exactly once, which is what the rule above is about.
    */
   const underground = useViewStore((s) => s.underground);
+  /**
+   * A citizen's chrome is their flat's chrome.
+   *
+   * The layer, underground and infrastructure panels, the stats and the
+   * legend are ways of looking at a cadastre; a citizen was served one flat
+   * on one floor, and every one of those controls would either show them an
+   * empty scene or invite a question the API answers 404 to. Gated HERE, in
+   * the one place the chrome is composed, so all three layouts agree -- and
+   * each control is still mounted exactly once, which the harness relies on.
+   */
+  const citizen = useViewStore((s) => s.session.role === 'citizen');
+  const sidePanels = citizen ? null : (underground ? (
+    <>
+      <UndergroundPanel />
+      <Legend />
+      <SiteNavigator />
+      <LayerPanel />
+    </>
+  ) : (
+    <>
+      <SiteNavigator />
+      <LayerPanel />
+      <UndergroundPanel />
+      <Legend />
+    </>
+  ));
 
   // A selection made on the canvas has to become visible without the user
   // having to go looking for it: on a phone the detail is behind a tab, so
@@ -144,13 +170,17 @@ export default function OverlayRoot() {
           }
           layers={(
             <div className="flex flex-col gap-2">
-              <SiteNavigator />
-              <LayerPanel />
-              <UndergroundPanel />
+              {citizen ? null : (
+                <>
+                  <SiteNavigator />
+                  <LayerPanel />
+                  <UndergroundPanel />
+                </>
+              )}
             </div>
           )}
-          legend={<Legend />}
-          stats={<StatsPanel />}
+          legend={citizen ? null : <Legend />}
+          stats={citizen ? null : <StatsPanel />}
         />
       </div>
     );
@@ -197,21 +227,7 @@ export default function OverlayRoot() {
             title="Layers and display"
           >
             <div className="flex flex-col gap-2">
-              {underground ? (
-                <>
-                  <UndergroundPanel />
-                  <Legend />
-                  <SiteNavigator />
-                  <LayerPanel />
-                </>
-              ) : (
-                <>
-                  <SiteNavigator />
-                  <LayerPanel />
-                  <UndergroundPanel />
-                  <Legend />
-                </>
-              )}
+              {sidePanels}
             </div>
           </Drawer>
         </div>
@@ -231,7 +247,7 @@ export default function OverlayRoot() {
           {/* StatsPanel folds INTO the rail here. Beside it there is no room:
               268px of panel plus a 288px rail would reach across a 768px
               viewport and land on the drawer. */}
-          <RightRail withStats={statsOpen} />
+          <RightRail withStats={statsOpen && !citizen} />
         </div>
 
         <div className="absolute left-3 right-[300px] top-[68px] flex justify-center">
@@ -266,21 +282,7 @@ export default function OverlayRoot() {
       </div>
 
       <div className="absolute bottom-[46px] left-3 top-[68px] flex w-[210px] flex-col gap-2 overflow-y-auto">
-        {underground ? (
-          <>
-            <UndergroundPanel />
-            <Legend />
-            <SiteNavigator />
-            <LayerPanel />
-          </>
-        ) : (
-          <>
-            <SiteNavigator />
-            <LayerPanel />
-            <UndergroundPanel />
-            <Legend />
-          </>
-        )}
+        {sidePanels}
       </div>
 
       <div className="absolute left-[228px] top-1/2 -translate-y-1/2">
@@ -293,7 +295,7 @@ export default function OverlayRoot() {
 
       {/* Beside the right-hand column, not inside it. */}
       <div className="absolute right-[330px] top-[68px] max-h-[calc(100%-120px)] w-[268px]">
-        <StatsPanel />
+        {citizen ? null : <StatsPanel />}
       </div>
 
       <div className="absolute left-1/2 top-[68px] flex -translate-x-1/2 justify-center">

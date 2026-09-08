@@ -52,6 +52,8 @@ interface LayerState {
   fadeTarget: number;
   visible: boolean;
   hideActive: boolean;
+  /** A citizen session: the active tower stays as a faint shell. */
+  citizen: boolean;
   style: BuildingStyle;
 }
 
@@ -110,13 +112,14 @@ export default function BuildingsLayer() {
   const showBuildings = useViewStore((s) => s.layers.buildings);
   const gis2d = useViewStore((s) => s.gis2d);
   const buildingStyle = useViewStore((s) => s.buildingStyle);
+  const citizen = useViewStore((s) => s.session.role === 'citizen');
   // Shadows are scoped to the buildings: they are what reads as massing under a
   // low sun, and every extra casting layer is another depth pass per frame.
   const sunHour = useViewStore((s) => s.sunHour);
 
   const stateRef = useRef<LayerState>({
     activeId: null, hoveredId: null, fade: 1, fadeTarget: 1,
-    visible: true, hideActive: false, style: 'schematic',
+    visible: true, hideActive: false, citizen: false, style: 'schematic',
   });
   /**
    * Shadow mode, shared by every building entity.
@@ -241,6 +244,10 @@ export default function BuildingsLayer() {
           // Photoreal: present for picking, invisible on screen. Checked first
           // so neither hover nor fade can bring the ghost back into view.
           if (s.style === 'photoreal') return MATERIALS.buildingGhost;
+          // The citizen's own tower, seen from inside it: a faint shell.
+          if (s.citizen && s.hideActive && s.activeId === id) {
+            return Cesium.Color.WHITE.withAlpha(MATERIALS.citizenMassAlpha);
+          }
           if (s.hoveredId === id) return MATERIALS.buildingHover.withAlpha(0.85);
           if (s.activeId === null || s.activeId === id) {
             return Cesium.Color.WHITE.withAlpha(CITY_ALPHA);
@@ -266,8 +273,11 @@ export default function BuildingsLayer() {
             const s = stateRef.current;
             if (!s.visible) return false;
             // In building/floor/unit mode the active building's single
-            // extrusion is replaced by its floor stack, so it must go.
-            if (s.hideActive && s.activeId === id) return false;
+            // extrusion is replaced by its floor stack, so it must go --
+            // except for a citizen, who was served ONE plate and would
+            // otherwise see it floating in the sky: for them the tower stays,
+            // faint, as the thing their floor is a floor of.
+            if (s.hideActive && s.activeId === id) return s.citizen;
             return true;
           }, false),
         },
@@ -408,6 +418,7 @@ export default function BuildingsLayer() {
     // components/globe/Scene.tsx for what is hidden and what is not.
     s.visible = showBuildings && !gis2d;
     s.hideActive = mode !== 'city';
+    s.citizen = citizen;
     s.style = buildingStyle;
     // 15% in underground mode, otherwise the transparency slider (default 12%).
     // The slider only ever reaches schematic geometry: in photoreal mode the
@@ -416,7 +427,7 @@ export default function BuildingsLayer() {
     s.fadeTarget =
       underground ? 0.15 : activeBuildingId === null ? 1 : transparency / 100;
   }, [activeBuildingId, hoveredBuildingId, showBuildings, gis2d, mode,
-      transparency, underground, buildingStyle]);
+      transparency, underground, buildingStyle, citizen]);
 
   // Shadows follow the sun slider. Off until it is touched.
   useEffect(() => {

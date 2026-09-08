@@ -50,6 +50,7 @@ type BuildingDetail = {
 
 export default function CitizenAutoFrame() {
   const firedRef = useRef(false);
+  const myBuildingRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (firedRef.current) return;
@@ -68,6 +69,7 @@ export default function CitizenAutoFrame() {
             : { role: me.role ?? null, floor: null, unit: null },
         );
         if (me.role !== 'citizen') return;
+        myBuildingRef.current = me.buildingId;
         // PROJECT-SCOPED, not the unscoped alias. `/api/building/:id` resolves
         // against the demo project whatever the session says, so a citizen on
         // any other project used to get a 404 here and no framing at all.
@@ -89,11 +91,16 @@ export default function CitizenAutoFrame() {
         firedRef.current = true;
         // selectBuilding() also flips the mode to 'building', which is
         // the correct next state -- the camera will frame the whole
-        // building before isolateFloor() drops to the floor level.
+        // building before the flat is opened.
         useViewStore.getState().selectBuilding(me.buildingId);
-        useViewStore.getState().isolateFloor(me.floor);
         if (myUnit) {
-          useViewStore.setState({ selectedUnitId: myUnit.id });
+          // The floor and the flat in one write, and in UNIT mode, so the
+          // panel opens on their card straight away: it is the only card
+          // they have, and the floor view would show one flat on one plate
+          // and a panel about the level.
+          useViewStore.getState().openUnit(me.floor, myUnit.id);
+        } else {
+          useViewStore.getState().isolateFloor(me.floor);
         }
       } catch {
         /* not signed in or backend hiccup -- leave the view alone */
@@ -101,6 +108,20 @@ export default function CitizenAutoFrame() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // THE BUILDING IS PINNED for a citizen. The URL carries the selection
+  // (lib/url-state.ts), so a pasted or edited `?b=` could point the store at
+  // a building the API will 404 for; rather than an empty scene, the store is
+  // put back on theirs. The API is the guard; this is the recovery.
+  const role = useViewStore((s) => s.session.role);
+  const activeBuildingId = useViewStore((s) => s.activeBuildingId);
+  useEffect(() => {
+    if (role !== 'citizen' || !firedRef.current) return;
+    const mine = myBuildingRef.current;
+    if (mine !== null && activeBuildingId !== mine) {
+      useViewStore.getState().selectBuilding(mine);
+    }
+  }, [role, activeBuildingId]);
 
   return null;
 }

@@ -45,6 +45,7 @@ export default function NavDock({
   const activeBuildingId = useViewStore((s) => s.activeBuildingId);
   const gis2d = useViewStore((s) => s.gis2d);
   const setGis2d = useViewStore((s) => s.setGis2d);
+  const citizen = useViewStore((s) => s.session.role === 'citizen');
   // Disabled while the 2D view is on, as well as with nothing selected. Both
   // are states in which a section cut through the active building means
   // nothing; the store already refuses the combination, and this is the
@@ -108,6 +109,11 @@ export default function NavDock({
         Reset view
       </button>
 
+      {/* The 2D cadastral sheet and the section cut are ways of reading a
+          cadastre; a citizen was served one flat on one plate, and neither
+          has anything to show them. */}
+      {citizen ? null : (
+      <>
       <span className="mx-1 h-4 w-px bg-[rgb(var(--edge))]" />
 
       <button
@@ -146,6 +152,8 @@ export default function NavDock({
       >
         Slice
       </button>
+      </>
+      )}
     </div>
   );
 }

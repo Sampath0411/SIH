@@ -59,6 +59,22 @@ export interface DeedDoc {
 
   carpet_m2?: number;
   built_m2?: number;
+  /**
+   * The parking bay this flat's title allocates, by its own identifier.
+   *
+   * FROM THE FLAT'S RECORD, not from the LADM fetch: the register entry the
+   * unit arrives with names the bay, and the bay's row is in the same
+   * building document, so the certificate can print the bay even when the
+   * ISO 19152 request fails and the LA_BAUnit member line is absent. A bay
+   * is appurtenant -- a term of the flat's title, not a holding of its own
+   * -- which is what the row says.
+   */
+  parking?: {
+    ulpin: string;
+    label: string;
+    level_label: string;
+    area_m2?: number;
+  };
   /** z_max - z_min, metres. */
   height_m: number;
   /** built_m2 * height_m, cubic metres. The volumetric extent of the right. */
@@ -212,6 +228,20 @@ export function buildDeed(input: DeedInput): DeedDoc | null {
 
     carpet_m2: unit.carpet_m2,
     built_m2: unit.built_m2,
+    ...(input.titled && unit.parking_ulpin ? {
+      parking: (() => {
+        const bay = detail.units.find((u) => u.ulpin === unit.parking_ulpin);
+        const bayLevel = bay?.level_no ?? unit.parking_level;
+        return {
+          ulpin: unit.parking_ulpin,
+          label: unit.parking_label ?? bay?.label ?? bay?.unit_no ?? unit.parking_ulpin,
+          level_label: bayLevel === undefined
+            ? '—'
+            : `Level ${levelLabel(bayLevel, b.floors - 1)}`,
+          ...(bay?.built_m2 !== undefined ? { area_m2: bay.built_m2 } : {}),
+        };
+      })(),
+    } : {}),
     height_m: height,
     volume_m3: unit.built_m2 === undefined ? undefined : unit.built_m2 * height,
 
@@ -290,6 +320,28 @@ export function deedRows(d: DeedDoc): [string, string][] {
   push('Built-up area', d.built_m2 === undefined ? undefined : `${d.built_m2.toFixed(2)} m²`);
   push('Clear height', `${d.height_m.toFixed(2)} m`);
   push('Volumetric extent', d.volume_m3 === undefined ? undefined : `${d.volume_m3.toFixed(1)} m³`);
+  return rows;
+}
+
+/**
+ * The appurtenant parking block, its own table on the certificate.
+ *
+ * Empty for a volume with no bay: a shop, a bay itself, or a flat in a
+ * building that allocates none. Printed as its own heading rather than as
+ * rows of the record above, because the bay is a DIFFERENT spatial unit --
+ * with its own identifier, on another level -- that this title carries a
+ * right over, and the document has to say which of the two identifiers is
+ * the flat's.
+ */
+export function deedParkingRows(d: DeedDoc): [string, string][] {
+  if (!d.parking) return [];
+  const rows: [string, string][] = [
+    ['Bay', d.parking.label],
+    ['Bay 3D ULPIN', d.parking.ulpin],
+    ['Bay level', d.parking.level_label],
+  ];
+  if (d.parking.area_m2 !== undefined) rows.push(['Bay area', `${d.parking.area_m2.toFixed(1)} m²`]);
+  rows.push(['Held as', 'Appurtenant to this flat; not separately titled']);
   return rows;
 }
 

@@ -104,7 +104,10 @@ export default function StatusBar({
       <span className={conflicts.length ? 'text-dangerInk' : ''}>
         {conflicts.length} conflicts
       </span>
-      {activeProps ? (
+      {/* Absent for a citizen: the collection they are served carries the
+          building without its identifier, and the bar says nothing rather
+          than printing 'undefined'. */}
+      {activeProps?.ulpin ? (
         <>
           <Sep />
           <span
