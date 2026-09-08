@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { callerTagFromCtx } from '@/lib/http/caller-tag';
 import {
   backend, getBuildingDetail, getBuildings, getParcels,
-  getRoads, getSurveyParcelDetail, getSurveyParcels, getUtilities,
+  getRoads, getSurveyParcelDetail, getSurveyParcels, getTopology, getUtilities,
 } from '@/lib/db';
 import { applyEdit, editsRev } from '@/lib/data/edits';
 import { coerceEdit, validateEdit, warningsFor } from '@/lib/data/building-schema';
@@ -830,5 +830,55 @@ export async function queryRoute(slug: string, req: Request): Promise<NextRespon
     );
   } catch (err) {
     return errorResponse('query failed', err);
+  }
+}
+
+/**
+ * GET .../topology -> a live 3D clash and easement-clearance run.
+ *
+ * DELIBERATELY NOT CACHED, and deliberately not the same resource as
+ * `/conflicts`. The conflicts endpoint serves the `conflict` table: a fixed
+ * question asked once at seed time and recorded. This one asks the question
+ * again, now, against whatever the project currently holds -- which is the
+ * point of a button labelled "Run Topology Validation". Caching it would mean
+ * the answer stopped changing after an edit, which is exactly when a user
+ * presses it.
+ *
+ * A citizen sees only findings that touch their own building, on the same
+ * reasoning as conflictsRoute: the topology of a neighbour's basement is not
+ * theirs to read.
+ */
+export async function topologyRoute(slug: string, req: Request) {
+  const gate = await gateProject(slug);
+  if (gate) return gate;
+  const ctx = await callerContext(req);
+  const projectGuard = enforceProjectAccess(ctx, slug);
+  if (projectGuard) return projectGuard;
+  try {
+    const findings = await getTopology(slug);
+    // Matched on BOTH sides: the utility side never carries a building (a run
+    // that does is its own building's plumbing, and those pairs are excluded
+    // before they become findings), so filtering on `a` alone would hide every
+    // finding from every citizen.
+    const visible = ctx.kind === 'citizen'
+      ? findings.filter((f) => f.a.building_id === ctx.buildingId
+          || f.b.building_id === ctx.buildingId)
+      : findings;
+    const headers = await baseHeaders(slug);
+    // The current state, every time. See the comment above.
+    headers['cache-control'] = 'no-store';
+    return await jsonPayload(req, {
+      project: slug,
+      ran_at: new Date().toISOString(),
+      count: visible.length,
+      findings: visible,
+    }, {
+      resource: `${slug}:topology`,
+      rev: String(editsRev(slug)),
+      headers,
+      callerTag: callerTagFromCtx(ctx),
+    });
+  } catch (err) {
+    return errorResponse('failed to run topology validation', err);
   }
 }

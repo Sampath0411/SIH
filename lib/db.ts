@@ -11,6 +11,12 @@ import { enrichBuilding, enrichCollection, type UnitFacts } from './mock/buildin
 import { allEdits, editsFor, editsRev } from './data/edits';
 import type { BuildingEdit } from './data/building-schema';
 import { API_DIR, DEFAULT_SLUG, PROJECTS_DIR, isValidSlug } from './projects';
+import { detectClashes } from './topology';
+import type {
+  ClashFinding, ClashParty, ClashPartyType, RunInput, VolumeInput,
+} from './topology';
+import { categoryOfAssetType, UNDERGROUND_BY_KEY } from './underground/categories';
+import { placeSite } from './infra/build';
 
 /**
  * Data access with two backends, scoped by project.
@@ -305,7 +311,7 @@ export async function backend(slug: string): Promise<'postgis' | 'snapshot'> {
 const PROJECTS_SQL = `
   SELECT p.slug, p.name, p.state_code, p.district_code, p.scheme_code,
          p.status, p.created_at, p.stats,
-         p.elev_source, p.elev_datum, p.bhuvan_layers,
+         p.elev_source, p.elev_datum, p.geoid_sep_m, p.bhuvan_layers,
          ST_XMin(p.bbox_geom) AS west,  ST_YMin(p.bbox_geom) AS south,
          ST_XMax(p.bbox_geom) AS east,  ST_YMax(p.bbox_geom) AS north
     FROM projects p ORDER BY p.created_at, p.id`;
@@ -316,6 +322,7 @@ interface ProjectRow {
   stats: ProjectStats | null;
   elev_source: Project['elev_source'] | null;
   elev_datum: string | null;
+  geoid_sep_m: number | string | null;
   bhuvan_layers: Project['bhuvan_layers'];
   west: number; south: number; east: number; north: number;
 }
@@ -342,6 +349,11 @@ export async function projectsFromDb(): Promise<Project[] | null> {
       stats: r.stats && Object.keys(r.stats).length ? r.stats : null,
       elev_source: r.elev_source ?? 'placeholder',
       elev_datum: r.elev_datum ?? null,
+      // node-postgres hands back `double precision` as a string on some
+      // driver versions; Number(null) is 0, which here would assert that the
+      // geoid and the ellipsoid coincide, so the null check comes first.
+      geoid_sep_m: r.geoid_sep_m === null || r.geoid_sep_m === undefined
+        ? null : Number(r.geoid_sep_m),
       bhuvan_layers: r.bhuvan_layers ?? null,
     }));
   } catch {
@@ -456,6 +468,11 @@ function utilitiesSql(scope: Scope) {
       'properties', json_build_object(
         'id',u.id,'asset_type',u.asset_type,'depth_m',u.depth_m,
         'radius_m',u.radius_m,'authority',u.authority,'status',u.status,
+        -- Emitted so the PostGIS response carries the field the snapshot has
+        -- always carried. Without it UtilitiesLayer laid the demo tower's
+        -- riser out against the street datum on one backend and the
+        -- building's on the other.
+        'building_id',u.building_id,
         'in_conflict', EXISTS (SELECT 1 FROM conflict c
                                 WHERE c.a_type='utility' AND c.a_id=u.id)))),'[]'::json)) AS fc
   FROM utility u ${f.clause}`,
@@ -514,6 +531,7 @@ function detailSql(scope: Scope, id: number) {
          'z_min',u.z_min,'z_max',u.z_max,'carpet_m2',u.carpet_m2,
          'built_m2',u.built_m2,'tenure',u.tenure,'encumbrance',u.encumbrance,
          'owner',u.owner,'address',u.address,'facing',u.facing,
+         'kind',u.kind,'core_ref',u.core_ref,'label',u.label,
          'level_no',f2.level_no,
          'ring', ST_AsGeoJSON(ST_Force2D(ST_GeometryN(u.geom_3d,1)), 7)::json)
          ORDER BY f2.level_no, u.unit_no)
@@ -1220,4 +1238,328 @@ async function queryPointFromSnapshot(
 
   const rank = { parcel: 1, building: 2, floor: 3, unit: 4 } as const;
   return out.sort((a, b) => rank[a.level] - rank[b.level]);
+}
+
+// ---------------------------------------------------------------------------
+// Topology validation.
+//
+// Answered on demand, unlike `conflict`, which is a seeded table recording one
+// fixed question. Both backends answer, and they answer the SAME question:
+//
+//   PostGIS   runs it as real solid geometry -- ST_3DIntersects for the
+//             encroachments and ST_3DDistance for the easement clearances,
+//             through solids_intersect()'s SFCGAL path.
+//   Snapshot  runs lib/topology.ts, which is the prism-exact equivalent of
+//             the same two tests and is what db/02_functions.sql already
+//             falls back to when SFCGAL is missing.
+//
+// The air-rights test has NO database half in either case: flyover decks are
+// components of a SiteSpec in lib/infra, never rows, so it is computed from
+// the specs on both paths.
+// ---------------------------------------------------------------------------
+
+/**
+ * How far apart two things can be and still be worth an exact test, in
+ * degrees. Comfortably wider than the largest clearance any category declares
+ * (2.5 m, sewer), and it only decides which pairs reach the exact test.
+ */
+const TOPOLOGY_PAD_DEG = 0.00006;   // ~6.6 m
+
+function topologySql(scope: Scope) {
+  const runF = filter(scope, 'AND u.project_id = $P');
+  const volF = filter(scope, 'AND b.project_id = $P', runF.params);
+  const vol2F = filter(scope, 'AND b2.project_id = $P', volF.params);
+  return {
+    sql: `
+  WITH runs AS (
+    SELECT u.id, u.asset_type, u.authority, u.radius_m, u.envelope_3d,
+           u.ref, u.building_id
+      FROM utility u
+     WHERE u.envelope_3d IS NOT NULL ${runF.clause}
+  ), vols AS (
+    -- Individually titled subsurface volumes: the parking bays.
+    SELECT 'unit'::text AS vtype, un.id::bigint AS id, un.ulpin,
+           COALESCE(un.label, un.unit_no) AS label, un.kind,
+           un.geom_3d AS geom, un.z_min, un.z_max, f.building_id
+      FROM unit un
+      JOIN floor f ON f.id = un.floor_id
+      JOIN building b ON b.id = f.building_id
+     WHERE un.kind = 'parking' ${volF.clause}
+    UNION ALL
+    -- And the basement slabs themselves, for a building with no bay plan.
+    SELECT 'floor', f2.id::bigint, f2.ulpin,
+           'Level ' || f2.level_no, NULL,
+           f2.geom, f2.z_min, f2.z_max, f2.building_id
+      FROM floor f2
+      JOIN building b2 ON b2.id = f2.building_id
+     WHERE f2.level_no < 0 ${vol2F.clause}
+  )
+  SELECT r.id                AS run_id,
+         r.asset_type, r.authority, r.ref, r.radius_m,
+         v.vtype, v.id       AS vol_id,
+         v.ulpin, v.label, v.kind,
+         v.z_min, v.z_max,
+         ST_Z(ST_PointOnSurface(ST_Force2D(r.envelope_3d))) IS NOT NULL AS has_z,
+         ST_X(ST_PointOnSurface(ST_Force2D(v.geom))) AS lon,
+         ST_Y(ST_PointOnSurface(ST_Force2D(v.geom))) AS lat,
+         ST_ZMin(r.envelope_3d) AS run_z_min,
+         ST_ZMax(r.envelope_3d) AS run_z_max,
+         -- The exact tests. ST_MakeSolid matters on the intersect: without it
+         -- both operands are open shells, so a corridor lying WHOLLY INSIDE a
+         -- basement -- the worst encroachment there is -- would not report.
+         ST_3DIntersects(ST_MakeSolid(r.envelope_3d), ST_MakeSolid(v.geom)) AS hits,
+         ST_3DDistance(r.envelope_3d, v.geom) AS sep_m
+    FROM runs r
+    JOIN vols v
+      ON ST_Force2D(r.envelope_3d) && ST_Expand(ST_Force2D(v.geom), ${TOPOLOGY_PAD_DEG})
+   WHERE (r.building_id IS NULL OR r.building_id <> v.building_id)`,
+    params: vol2F.params,
+  };
+}
+
+interface TopologyRow {
+  run_id: number;
+  asset_type: string;
+  authority: string;
+  ref: string | null;
+  radius_m: number;
+  vtype: ClashPartyType;
+  vol_id: number;
+  building_id: number;
+  ulpin: string | null;
+  label: string;
+  kind: string | null;
+  z_min: number;
+  z_max: number;
+  lon: number;
+  lat: number;
+  run_z_min: number;
+  run_z_max: number;
+  hits: boolean;
+  sep_m: number;
+}
+
+/**
+ * Elevated air-rights findings, from the project's infrastructure specs.
+ *
+ * Shared by both backends because there is no other source: a deck span is a
+ * component of a SiteSpec, and `placeSite` is the pure function that turns one
+ * into rings and heights. The building envelope is the footprint swept from
+ * its ground to its roof, which is the same volume BuildingsLayer extrudes.
+ */
+async function airRightsFor(slug: string): Promise<ClashFinding[]> {
+  let index: SiteIndex;
+  try {
+    index = await getSites(slug);
+  } catch {
+    return [];
+  }
+  if (!index?.sites?.length) return [];
+
+  const buildings = await getBuildings(slug);
+  const envelopes: VolumeInput[] = [];
+  for (const f of buildings.features) {
+    const p = f.properties;
+    const ring = (f.geometry.coordinates as number[][][])?.[0];
+    if (!ring || ring.length < 4) continue;
+    envelopes.push({
+      type: 'building',
+      id: p.id,
+      ulpin: p.ulpin,
+      label: p.name ?? `Building ${p.id}`,
+      ring,
+      z_min: p.ground_elev,
+      z_max: p.ground_elev + Math.max(2, p.height_m),
+    });
+  }
+  if (!envelopes.length) return [];
+
+  const decks: VolumeInput[] = [];
+  for (const entry of index.sites) {
+    const spec = await getSiteSpec(slug, entry.id);
+    if (!spec) continue;
+    // A bare datum: the specs carry real lon/lat for the pieces that matter,
+    // and the deck heights are relative to the site's own ground.
+    const placed = placeSite(spec, 0);
+    for (const c of placed.components) {
+      if (c.kind !== 'deck_span' && c.kind !== 'ramp') continue;
+      c.rings.forEach((flat, i) => {
+        const ring: number[][] = [];
+        for (let k = 0; k + 1 < flat.length; k += 2) ring.push([flat[k], flat[k + 1]]);
+        if (ring.length < 3) return;
+        ring.push(ring[0]);
+        decks.push({
+          type: 'infra',
+          id: c.ref,
+          label: c.label || c.ref,
+          ring,
+          z_min: c.base[i] ?? 0,
+          z_max: c.top[i] ?? 0,
+        });
+      });
+    }
+  }
+  if (!decks.length) return [];
+
+  return detectClashes({ runs: [], volumes: [], clearanceOf, decks, envelopes });
+}
+
+/** The clearance a category requires, or null when it declares none. */
+function clearanceOf(assetType: string): number | null {
+  const cat = categoryOfAssetType(assetType);
+  if (!cat) return null;
+  return UNDERGROUND_BY_KEY[cat]?.clearance ?? null;
+}
+
+/**
+ * Run topology validation for a project, on whichever backend answers.
+ *
+ * Never cached: it is a question about the CURRENT state, and the button that
+ * fires it exists so a user can re-ask it after an edit.
+ */
+export async function getTopology(slug: string): Promise<ClashFinding[]> {
+  const air = await airRightsFor(slug);
+
+  const viaSql = await viaDb(slug, async (scope) => {
+    const { sql, params } = topologySql(scope);
+    const rows = await q<TopologyRow>(sql, params);
+    const out: ClashFinding[] = [];
+    for (const r of rows) {
+      const clearance = clearanceOf(r.asset_type);
+      const sep = Number(r.sep_m);
+      const label = `${r.ref ?? `#${r.run_id}`} · ${r.asset_type} · ${r.authority}`;
+      const a: ClashParty = {
+        type: 'utility',
+        id: r.run_id,
+        label,
+        z_min: Number(r.run_z_min),
+        z_max: Number(r.run_z_max),
+      };
+      const b: ClashParty = {
+        type: r.vtype,
+        id: r.vol_id,
+        ulpin: r.ulpin ?? undefined,
+        label: r.label,
+        z_min: Number(r.z_min),
+        z_max: Number(r.z_max),
+        building_id: r.building_id,
+      };
+      if (r.hits) {
+        out.push({
+          kind: r.kind === 'parking'
+            ? 'utility_through_parking' : 'utility_through_basement',
+          severity: 'critical',
+          a,
+          b,
+          lon: Number(r.lon),
+          lat: Number(r.lat),
+          z: Math.max(b.z_min, Math.min(b.z_max, (a.z_min + a.z_max) / 2)),
+          separation_m: 0,
+          required_m: clearance ?? undefined,
+          note: `${label} passes through ${r.label}.`,
+        });
+      } else if (clearance !== null && Number.isFinite(sep) && sep < clearance) {
+        out.push({
+          kind: 'clearance_breach',
+          severity: 'warning',
+          a,
+          b,
+          lon: Number(r.lon),
+          lat: Number(r.lat),
+          z: (a.z_min + a.z_max) / 2,
+          separation_m: Math.round(sep * 1000) / 1000,
+          required_m: clearance,
+          note: `${label} comes within ${sep.toFixed(2)} m of ${r.label}; `
+            + `${clearance.toFixed(2)} m clearance is required.`,
+        });
+      }
+    }
+    return out;
+  });
+  if (viaSql.ok) return [...viaSql.value, ...air];
+
+  // ---- snapshot path -----------------------------------------------------
+  // The same two tests, computed from the committed documents by the prism
+  // arithmetic in lib/topology.ts.
+  const [utilities, buildings] = await Promise.all([
+    getUtilities(slug), getBuildings(slug),
+  ]);
+  const utilFc = utilities as GeoFC<UtilityProps>;
+
+  // One ground datum for runs whose centreline carries no Z, matching what
+  // scripts/utilities.sql bakes in: the project's mean building ground.
+  let sum = 0; let n = 0;
+  for (const f of buildings.features) {
+    if (Number.isFinite(f.properties.ground_elev)) {
+      sum += f.properties.ground_elev; n += 1;
+    }
+  }
+  const groundZ = n ? sum / n : 12;
+
+  const runs: RunInput[] = [];
+  for (const f of utilFc.features) {
+    const p = f.properties;
+    const coords = f.geometry.coordinates as number[][];
+    if (!Array.isArray(coords) || coords.length < 1) continue;
+    runs.push({
+      id: p.id,
+      asset_type: p.asset_type,
+      authority: p.authority,
+      status: p.status,
+      radius_m: p.radius_m,
+      depth_m: p.depth_m,
+      coordinates: coords,
+      groundZ,
+      ref: p.ref,
+      building_id: p.building_id,
+    });
+  }
+
+  // Only buildings with something below grade can be encroached on, so the
+  // detail documents for the rest are never opened.
+  const volumes: VolumeInput[] = [];
+  for (const f of buildings.features) {
+    const p = f.properties;
+    if (!p.basements) continue;
+    let doc: BuildingDetail | null = null;
+    try {
+      doc = await getBuildingDetail(slug, p.id);
+    } catch {
+      doc = null;
+    }
+    if (!doc) continue;
+    const bays = doc.units.filter((u) => u.kind === 'parking');
+    for (const u of bays) {
+      const ring = (u.ring?.coordinates as number[][][] | undefined)?.[0];
+      if (!ring || ring.length < 4) continue;
+      volumes.push({
+        type: 'unit',
+        id: u.id,
+        ulpin: u.ulpin,
+        label: u.label ?? `Unit ${u.unit_no}`,
+        ring,
+        z_min: u.z_min,
+        z_max: u.z_max,
+        building_id: p.id,
+        kind: 'parking',
+      });
+    }
+    for (const fl of doc.floors) {
+      if (fl.level_no >= 0) continue;
+      const ring = (fl.ring?.coordinates as number[][][] | undefined)?.[0];
+      if (!ring || ring.length < 4) continue;
+      volumes.push({
+        type: 'floor',
+        id: fl.id,
+        ulpin: fl.ulpin,
+        label: `Level ${fl.level_no}`,
+        ring,
+        z_min: fl.z_min,
+        z_max: fl.z_max,
+        building_id: p.id,
+      });
+    }
+  }
+
+  return [...detectClashes({ runs, volumes, clearanceOf }), ...air];
 }
