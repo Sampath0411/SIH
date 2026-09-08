@@ -12,7 +12,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   codesOf, floorCode, generate, levelOf, parentOf, parse, parseFloorCode,
-  prefixFor, DEFAULT_CODES,
+  parseUnitSlot, prefixFor, unitSlot, DEFAULT_CODES,
 } from './ulpin.ts';
 
 /** A second project, in a different state and district. */
@@ -178,4 +178,158 @@ test('accepts lower case and surrounding whitespace', () => {
   assert.deepEqual(parse('  ap-vsp-3d26-0042-007-b2  '), {
     parcel: 42, building: 7, floor: -2,
   });
+});
+
+// ---------------------------------------------------------------------------
+// Typed unit slots
+// ---------------------------------------------------------------------------
+
+/**
+ * THE REGRESSION THIS FILE EXISTED TO CATCH AND DID NOT.
+ *
+ * The unit group used to be `(\d{2})`, so a slot of any other width failed to
+ * parse. Every one of Sampath Skyline's 80 flats is numbered by storey --
+ * '101' on level 1, '2004' on level 20 -- so none of them parsed, which
+ * silently dropped UlpinCard's segment breakdown and made parentOf() return
+ * null for every flat in the building. generate() was always right; only the
+ * reader disagreed, which is exactly the drift the header comment warns about.
+ */
+test('parses the storey-numbered flats the demo tower actually ships', () => {
+  assert.deepEqual(parse('AP-VSP-3D26-9999-001-01-101'), {
+    parcel: 9999, building: 1, floor: 1,
+    unit: 101, unitSlot: '101', unitKind: 'flat',
+  });
+  assert.deepEqual(parse('AP-VSP-3D26-9999-001-20-2004'), {
+    parcel: 9999, building: 1, floor: 20,
+    unit: 2004, unitSlot: '2004', unitKind: 'flat',
+  });
+  assert.equal(levelOf('AP-VSP-3D26-9999-001-01-101'), 'unit');
+  assert.equal(parentOf('AP-VSP-3D26-9999-001-01-101'), 'AP-VSP-3D26-9999-001-01');
+});
+
+test('encodes a unit slot for every kind', () => {
+  assert.equal(unitSlot('flat', 3), '03');
+  assert.equal(unitSlot('flat', 101), '101');
+  assert.equal(unitSlot('flat', 2004), '2004');
+  assert.equal(unitSlot('retail', 1), 'R01');
+  assert.equal(unitSlot('anchor', 9), 'R09');
+  assert.equal(unitSlot('parking', 101), 'P101');
+  assert.equal(unitSlot('circulation', 2), 'C02');
+  assert.equal(unitSlot('atrium', 1), 'C01');
+  assert.equal(unitSlot('elevator'), 'EV');
+  assert.equal(unitSlot('stair'), 'ST');
+  assert.equal(unitSlot('plant'), 'PL');
+});
+
+/** A flat has no prefix to carry, so it cannot be named without an ordinal. */
+test('a flat slot requires an ordinal', () => {
+  assert.throws(() => unitSlot('flat'), /needs an ordinal/);
+});
+
+test('generates typed identifiers, still seven groups', () => {
+  const shop = generate(165, 1, 0, unitSlot('retail', 1));
+  assert.equal(shop, 'AP-VSP-3D26-0165-001-00-R01');
+  assert.equal(shop.split('-').length, 7);
+  assert.equal(generate(9999, 1, -1, unitSlot('parking', 101)),
+    'AP-VSP-3D26-9999-001-B1-P101');
+  assert.equal(generate(9999, 1, -2, unitSlot('elevator')),
+    'AP-VSP-3D26-9999-001-B2-EV');
+  assert.equal(generate(9999, 1, 20, unitSlot('stair')),
+    'AP-VSP-3D26-9999-001-20-ST');
+});
+
+test('reads the kind back out of a typed identifier', () => {
+  const kindOf = (u: string) => parse(u, 'any')?.unitKind;
+  assert.equal(kindOf('AP-VSP-3D26-0165-001-00-R01'), 'retail');
+  assert.equal(kindOf('AP-VSP-3D26-9999-001-B1-P101'), 'parking');
+  assert.equal(kindOf('AP-VSP-3D26-0165-001-00-C01'), 'circulation');
+  assert.equal(kindOf('AP-VSP-3D26-9999-001-B2-EV'), 'elevator');
+  assert.equal(kindOf('AP-VSP-3D26-9999-001-05-ST'), 'stair');
+  assert.equal(kindOf('AP-VSP-3D26-0165-001-00-01'), 'flat');
+});
+
+/**
+ * A shaft is one volume per level with no ordinal, so `unit` is absent while
+ * `unitSlot` is present. Consumers deciding "is this a unit?" must read
+ * unitSlot -- reading `unit` would classify a lift core as a floor.
+ */
+test('a core slot carries no ordinal but is still unit level', () => {
+  const p = parse('AP-VSP-3D26-9999-001-B2-EV');
+  assert.deepEqual(p, {
+    parcel: 9999, building: 1, floor: -2, unitSlot: 'EV', unitKind: 'elevator',
+  });
+  assert.equal(p!.unit, undefined);
+  assert.equal(levelOf('AP-VSP-3D26-9999-001-B2-EV'), 'unit');
+  assert.equal(parentOf('AP-VSP-3D26-9999-001-B2-EV'), 'AP-VSP-3D26-9999-001-B2');
+});
+
+test('every typed identifier round-trips through generate', () => {
+  for (const u of [
+    'AP-VSP-3D26-0165-001-00-R01', 'AP-VSP-3D26-9999-001-B1-P101',
+    'AP-VSP-3D26-9999-001-B2-EV', 'AP-VSP-3D26-9999-001-20-ST',
+    'AP-VSP-3D26-0165-001-00-C01', 'AP-VSP-3D26-9999-001-01-101',
+    'AP-VSP-3D26-0042-007-05-03',
+  ]) {
+    const p = parse(u, 'any')!;
+    assert.equal(
+      generate(p.parcel, p.building, p.floor, p.unitSlot, codesOf(u)!), u,
+    );
+  }
+});
+
+test('parseUnitSlot rejects malformed slots', () => {
+  // A prefix that takes an ordinal, without one; one that does not, with one.
+  for (const bad of ['R', 'P', 'C', 'EV01', 'ST99', 'XX', 'X01', '3', '', 'R1']) {
+    assert.equal(parseUnitSlot(bad), null,
+      `should have rejected ${JSON.stringify(bad)}`);
+  }
+});
+
+/** The widening must not have loosened what a ULPIN is. */
+test('still rejects unit slots that are not ours', () => {
+  for (const bad of [
+    'AP-VSP-3D26-0042-007-05-3',     // one digit
+    'AP-VSP-3D26-0042-007-XX',       // not a kind prefix
+    'AP-VSP-3D26-0042-007-05-X01',
+    'AP-VSP-3D26-0042-007-05-R1',    // ordinal too short
+    'AP-VSP-3D26-0042-007-05-EV01',  // core with an ordinal
+    'AP-VSP-3D26-0042-007-05-00001', // five digits
+  ]) {
+    assert.equal(parse(bad, 'any'), null,
+      `should have rejected ${JSON.stringify(bad)}`);
+  }
+});
+
+/**
+ * Parity with the SQL side of the typed slot.
+ *
+ * Same discipline as the ulpin_fmt() tests above, for the same reason: the
+ * seeders mint these in SQL and the viewer reads them in TypeScript, so a
+ * divergence would show up as a shop that cannot be picked rather than as a
+ * failing build.
+ *
+ * Fixed expectations, verified against a live postgres:
+ *   SELECT ulpin_fmt_slot(165,  1,  0, unit_slot('retail', 1));
+ *   SELECT ulpin_fmt_slot(9999, 1, -1, unit_slot('parking', 101));
+ *   SELECT ulpin_fmt_slot(9999, 1, -2, unit_slot('elevator'));
+ *   SELECT ulpin_fmt_slot(9999, 1, 20, unit_slot('stair'));
+ *   SELECT ulpin_fmt_slot(165,  1,  0, unit_slot('atrium', 1));
+ *   SELECT ulpin_fmt_slot(9999, 1,  1, unit_slot('flat', 101));
+ *   SELECT ulpin_fmt_slot(42, 7, 5, unit_slot('flat', 3), 'TS','HYD','3D26');
+ */
+test('matches the SQL encoding for typed unit slots', () => {
+  assert.equal(generate(165, 1, 0, unitSlot('retail', 1)),
+    'AP-VSP-3D26-0165-001-00-R01');
+  assert.equal(generate(9999, 1, -1, unitSlot('parking', 101)),
+    'AP-VSP-3D26-9999-001-B1-P101');
+  assert.equal(generate(9999, 1, -2, unitSlot('elevator')),
+    'AP-VSP-3D26-9999-001-B2-EV');
+  assert.equal(generate(9999, 1, 20, unitSlot('stair')),
+    'AP-VSP-3D26-9999-001-20-ST');
+  assert.equal(generate(165, 1, 0, unitSlot('atrium', 1)),
+    'AP-VSP-3D26-0165-001-00-C01');
+  assert.equal(generate(9999, 1, 1, unitSlot('flat', 101)),
+    'AP-VSP-3D26-9999-001-01-101');
+  assert.equal(generate(42, 7, 5, unitSlot('flat', 3), TS_HYD),
+    'TS-HYD-3D26-0042-007-05-03');
 });
