@@ -328,11 +328,11 @@ export default function UnitsLayer() {
         },
         label: {
           text: unit.unit_no,
-          font: '600 12px ui-sans-serif, system-ui, sans-serif',
+          font: FLOOR_VIEW.LABEL_FONT,
           style: Cesium.LabelStyle.FILL_AND_OUTLINE,
           fillColor: MATERIALS.unitLabelFill,
           outlineColor: MATERIALS.unitLabelOutline,
-          outlineWidth: 3,
+          outlineWidth: FLOOR_VIEW.LABEL_OUTLINE_PX,
           verticalOrigin: Cesium.VerticalOrigin.CENTER,
           horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
           // Declutter: past this the flats are a few pixels across and their
@@ -340,6 +340,13 @@ export default function UnitsLayer() {
           // position, so it costs nothing per frame.
           distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
             0, FLOOR_VIEW.LABEL_MAX_DISTANCE_M,
+          ),
+          // Full size up close, easing down to LABEL_SCALE_FAR at the cap, so
+          // the codes thin out on approach to it rather than all disappearing
+          // on one frame. Same idiom as the parcel numbers.
+          scaleByDistance: new Cesium.NearFarScalar(
+            FLOOR_VIEW.LABEL_SCALE_NEAR_M, 1.0,
+            FLOOR_VIEW.LABEL_MAX_DISTANCE_M, FLOOR_VIEW.LABEL_SCALE_FAR,
           ),
           // The flats sit inside a translucent shell; without this the codes
           // disappear behind it at grazing angles.

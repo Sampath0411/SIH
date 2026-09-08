@@ -525,26 +525,19 @@ function buildFlyover() {
     meta: { Lanes: 4, Runs: 'Beneath the flyover deck', Geometry: 'OpenStreetMap' },
   });
 
-  // The junction the structure exists to separate, at the mapped mid-point.
-  const mid = centre[Math.floor(centre.length / 2)];
-  components.push({
-    ref: 'TTF-JCT-01',
-    kind: 'junction',
-    shape: 'box',
-    label: 'Asilmetta junction',
-    lod: 'far',
-    x: 0,
-    y: 0,
-    w: 74,
-    d: 74,
-    base: 0.02,
-    height: 0.06,
-    meta: {
-      Type: 'At-grade crossing beneath the flyover',
-      Arms: 4,
-      Position: `${mid[1].toFixed(6)}, ${mid[0].toFixed(6)}`,
-    },
-  });
+  // NO JUNCTION SLAB.
+  //
+  // A 74 m grey pad used to be emitted here for the Asilmetta crossing, and it
+  // was drawn in the wrong place: `x: 0, y: 0` puts a box at the site ANCHOR,
+  // which is the west end of the mapped alignment, while its own
+  // `meta.Position` reported the mid-point it was supposed to sit on. The two
+  // disagreed because the anchor-relative frame was never applied to it.
+  //
+  // It is deleted rather than moved. The crossing it marked is already legible
+  // from the at-grade road above passing under the deck -- that IS the grade
+  // separation -- so the pad added a slab of invented geometry to say
+  // something the mapped alignments already said. `kind: 'junction'` stays in
+  // lib/infra/types.ts for any site that has a junction worth drawing.
 
   return {
     id: 'telugu-thalli-flyover',

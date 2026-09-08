@@ -94,7 +94,11 @@ export default function ParcelInset() {
       </div>
       <svg
         viewBox={`0 0 ${SIZE} ${SIZE}`}
-        className={`mt-1.5 h-auto w-full max-w-[${SIZE}px] rounded bg-[rgb(var(--surface-2))]`}
+        // No max-width: this used to interpolate SIZE into the class name,
+        // which Tailwind cannot see at build time, so the rule was never
+        // emitted and the attribute was decoration. The rail is 288-318px and
+        // the inset is meant to fill it.
+        className="mt-1.5 h-auto w-full rounded bg-[rgb(var(--surface-2))]"
       >
         {view.neighbours
           .filter((p) => !p.selected)

@@ -31,7 +31,16 @@ export type SheetSnap = 'peek' | 'half' | 'full';
 export type SheetTab = 'detail' | 'layers' | 'key' | 'stats';
 
 export interface UiState {
-  /** Medium regime: the off-canvas layer panel. */
+  /**
+   * Medium regime: the off-canvas layer panel.
+   *
+   * Defaults OPEN. The TopBar no longer carries a "Layers" button, so at the
+   * one width where the layer column is off-canvas this flag is the only
+   * thing standing between the user and the layer switches, the sun slider,
+   * the underground panel and the legend. A disclosure whose trigger has been
+   * removed must not start closed; OverlayRoot renders a chevron on the
+   * drawer's own edge for collapsing it.
+   */
   drawerOpen: boolean;
   /** Compact regime: bottom-sheet position and tab. */
   sheetSnap: SheetSnap;
@@ -53,7 +62,7 @@ export interface UiState {
 }
 
 export const useUiStore = create<UiState>((set) => ({
-  drawerOpen: false,
+  drawerOpen: true,
   sheetSnap: 'peek',
   sheetTab: 'detail',
 

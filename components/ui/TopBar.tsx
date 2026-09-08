@@ -6,12 +6,18 @@ import { parse } from '@/lib/ulpin';
 import SessionChip from '@/components/auth/SessionChip';
 
 /**
- * Brand, search and the tool menus.
+ * Brand, search, Stats and the session.
  *
  * Search resolves a ULPIN, an address fragment or an owner name down to a
- * building and selects it. Measurements and Share are rendered visibly
- * disabled: the brief asks for them to be present but inert, and hiding them
- * would misrepresent what the build actually does.
+ * building and selects it.
+ *
+ * NOTHING INERT LIVES HERE ANY MORE. Layers, Tools, Measurements and Share
+ * used to sit in this row: two of them were signposts pointing at controls
+ * elsewhere on screen, and two were permanently disabled stubs. Showing a
+ * disabled control is honest about an unbuilt feature, but four of them
+ * across the top of a demo read as an application that mostly does not work.
+ * The layer drawer they pointed at is now open by default at the one width
+ * where it was not already visible -- see OverlayRoot's medium branch.
  */
 
 interface Hit {
@@ -21,15 +27,8 @@ interface Hit {
 }
 
 export default function TopBar({
-  /** Phone layout: the tool menus go, the search stays. */
+  /** Phone layout: the search takes the whole row rather than a 300px cap. */
   compact = false,
-  /**
-   * Medium layout: the "Layers" button becomes a real disclosure for the
-   * drawer. Until now it carried only a `title` hint and did nothing when
-   * clicked, which was a button lying about being a menu.
-   */
-  onLayersClick,
-  layersOpen = false,
   /**
    * Override for the Stats control.
    *
@@ -42,8 +41,6 @@ export default function TopBar({
   statsActive,
 }: {
   compact?: boolean;
-  onLayersClick?: () => void;
-  layersOpen?: boolean;
   onStatsClick?: () => void;
   statsActive?: boolean;
 } = {}) {
@@ -163,20 +160,8 @@ export default function TopBar({
       </div>
 
       <div className="ml-auto flex shrink-0 items-center gap-1">
-        {compact ? null : (
-          <>
-            <MenuButton
-              label="Layers"
-              hint={onLayersClick ? 'Show or hide the layer panel' : 'Use the panel on the left'}
-              onClick={onLayersClick}
-              expanded={onLayersClick ? layersOpen : undefined}
-              controls={onLayersClick ? 'layer-drawer' : undefined}
-            />
-            <MenuButton label="Tools" hint="Use the dock at the bottom" />
-          </>
-        )}
-        {/* MenuButton has no pressed state, so this uses the active idiom from
-            ActionBar and NavDock rather than inventing a third one. */}
+        {/* The active idiom is the one ActionBar and NavDock use, rather than
+            a third one invented here. */}
         <button
           type="button"
           onClick={onStatsClick ?? (() => setStatsOpen(!statsOpen))}
@@ -191,50 +176,9 @@ export default function TopBar({
         >
           Stats
         </button>
-        {compact ? null : (
-          <>
-            <MenuButton label="Measurements" disabled />
-            <MenuButton label="Share" disabled />
-          </>
-        )}
         <span className="ml-1 h-4 w-px bg-edge" />
         <SessionChip />
       </div>
     </div>
-  );
-}
-
-function MenuButton({
-  label,
-  disabled,
-  hint,
-  onClick,
-  expanded,
-  controls,
-}: {
-  label: string;
-  disabled?: boolean;
-  hint?: string;
-  onClick?: () => void;
-  expanded?: boolean;
-  controls?: string;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      aria-expanded={expanded}
-      aria-controls={controls}
-      title={disabled ? `${label} — not implemented` : hint}
-      className={[
-        'rounded px-2 py-1 text-[11px] transition-colors',
-        disabled
-          ? 'is-disabled text-[rgb(var(--muted))]'
-          : 'text-[rgb(var(--ink))] tint-hover',
-      ].join(' ')}
-    >
-      {label}
-    </button>
   );
 }

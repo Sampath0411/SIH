@@ -187,8 +187,18 @@ const ULPIN_BASE = `${STATE}-${DISTRICT}-${SCHEME}-9999`;
  * four distinct volumes on it rather than one slab -- which is the whole
  * point: a citizen has to be able to see their flat apart from its
  * neighbours before "click your own flat" means anything.
+ *
+ * EVERY FLOOR, not a sample of them. This used to be [2, 5, 9, 13, 17, 20]:
+ * six floors out of twenty, chosen to keep the register small. The building
+ * record has always said `floors: 20`, so isolating floor 6 gave a bare plate
+ * with nothing on it and the tower read as mostly empty -- the one thing the
+ * demo tower exists not to do. 20 floors x 4 slots = 80 flats, which the
+ * register generates deterministically and the floor view already renders one
+ * plate at a time.
+ *
+ * The ground floor (0) is deliberately not residential.
  */
-const FLAT_FLOORS = [2, 5, 9, 13, 17, 20];
+const FLAT_FLOORS = Array.from({ length: 20 }, (_, i) => i + 1);
 
 // 24 levels: 3 basements + 21 above-ground levels (ground + 20 storeys).
 const ALL_LEVELS = [-3, -2, -1, ...Array.from({ length: 21 }, (_, i) => i)];
@@ -199,13 +209,17 @@ const CITY = 'Visakhapatnam';
 const PIN = '530003';
 
 /**
- * Owners, one per flat, keyed "<level>-<slot>".
+ * Named owners, keyed "<level>-<slot>".
  *
  * The three entries that match data/projects/siripuram/residents.json are the
  * demo logins and MUST stay in step with it -- the citizen session carries
  * `unit` as a string code and the viewer matches it against `unit_no`. The
  * rest are here so a floor reads as a real floor: three neighbours the
  * citizen can see the shape of and cannot open.
+ *
+ * This covers the six floors the register originally had. Every other flat
+ * gets a name from ownerFor() below rather than the string "Unallotted",
+ * which on 56 of 80 flats would read as a half-built dataset.
  */
 const OWNERS = {
   '2-1': 'Ravi Kumar',        // demo login  111122223333
@@ -324,7 +338,23 @@ parcels.features.push(newParcel);
 // 3. detail.json -- the full BuildingDetail document for id=999.
 // ---------------------------------------------------------------------------
 const floorIdBase = 90000;
-const unitIdBase = 95000;
+/**
+ * WELL CLEAR OF THE EXPORTER'S RANGE, and that is not arbitrary.
+ *
+ * This was 95000, which fitted while the demo tower had 24 flats. At 80 it
+ * runs to 95079 and collides head-on with the units the main seed assigned to
+ * buildings 5579-5582 -- the PostGIS half of this script died on
+ * `duplicate key value violates unique constraint "unit_pkey"` and rolled
+ * back, leaving the database describing a 24-flat tower and the snapshot an
+ * 80-flat one.
+ *
+ * 990000 sits above every id the exporter issues (the largest unit id in a
+ * seeded database is around 127k) and echoes the demo numbering used for the
+ * building (999), the parcel (9990) and its utilities (99001-99003). The
+ * floor base above needs no such move: it spans 24 ids and always will,
+ * because ALL_LEVELS is fixed.
+ */
+const unitIdBase = 990000;
 
 // A floor's own ring stays the full plate -- the storey really is the whole
 // footprint. It is the UNITS on it that are subdivided.
@@ -389,6 +419,40 @@ function pick(seed, n) {
     h = Math.imul(h, 16777619);
   }
   return Math.abs(h) % n;
+}
+
+/**
+ * Given and family names for the flats OWNERS does not name.
+ *
+ * Two lists combined by `pick`, so 80 flats do not need 80 hand-written
+ * entries and a re-run produces the same register. Coastal-Andhra surnames,
+ * matching the hand-written names above so one floor does not read as a
+ * different city from the next.
+ */
+const GIVEN = [
+  'Srinivas', 'Padmaja', 'Venkat', 'Lalitha', 'Ramesh', 'Bhavani',
+  'Kishore', 'Swapna', 'Prasad', 'Jyothi', 'Naveen', 'Sridevi',
+  'Chandra', 'Vasantha', 'Murali', 'Indira', 'Satish', 'Vijaya',
+  'Harish', 'Rukmini', 'Bhaskar', 'Sarita', 'Mohan', 'Kalyani',
+];
+const FAMILY = [
+  'Raju', 'Patnaik', 'Naidu', 'Sastry', 'Varma', 'Reddy', 'Rao',
+  'Chowdary', 'Prasad', 'Murthy', 'Appalaraju', 'Yadav', 'Kumari',
+  'Simhadri', 'Gollapalli', 'Kandregula',
+];
+
+/**
+ * Who owns one flat. A hand-written owner wins; otherwise a stable made-up
+ * one, seeded from the flat code exactly as registerFor() seeds everything
+ * else about the flat, so the name and its title deed never disagree between
+ * runs.
+ */
+function ownerFor(level, slotNo) {
+  const named = OWNERS[`${level}-${slotNo}`];
+  if (named) return named;
+  const seed = `own-${level}-${slotNo}`;
+  return `${GIVEN[pick(`g${seed}`, GIVEN.length)]} `
+    + `${FAMILY[pick(`f${seed}`, FAMILY.length)]}`;
 }
 
 const BANKS = [
@@ -534,7 +598,7 @@ for (const lvl of FLAT_FLOORS) {
       // home rather than as a volume. `owner` in particular did not exist
       // before: the panel fell back to the PARCEL's owner, so every flat in
       // the tower was attributed to the developer.
-      owner: OWNERS[`${lvl}-${slotNo}`] ?? 'Unallotted',
+      owner: ownerFor(lvl, slotNo),
       address: `Flat ${code}, ${BUILDING_NAME}, ${STREET}, ${CITY} ${PIN}`,
       facing: slot.facing,
       ring: { type: 'Polygon', coordinates: flatRing(slot) },
@@ -670,7 +734,10 @@ const taxDue = Object.values(flatRegister)
   .filter((e) => (e.tax?.paid_inr ?? 0) < (e.tax?.demand_inr ?? 0)).length;
 
 console.log('Seeded building 999:');
-console.log(`  ${units.length} flats: 4 per floor on floors ${FLAT_FLOORS.join(', ')}`);
+console.log(
+  `  ${units.length} flats: 4 per floor on floors `
+  + `${FLAT_FLOORS[0]}-${FLAT_FLOORS[FLAT_FLOORS.length - 1]}`,
+);
 console.log(`  flat register: ${mortgaged} mortgaged, ${taxDue} with tax outstanding`);
 console.log(`  each ${builtM2} m² built-up / ${carpetM2} m² carpet`);
 console.log('  3 basements (B1, B2, B3)');

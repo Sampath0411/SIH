@@ -136,6 +136,33 @@ export const FLOOR_VIEW = {
   LABEL_MAX_DISTANCE_M: 250,
 
   /**
+   * The unit code's own type.
+   *
+   * Sized one step up from the 12px it was, because these codes are the
+   * smallest text in the scene AND the only text a citizen is asked to read
+   * a specific value off -- "is this 903 or 908" is the whole interaction.
+   *
+   * Sharpness is not a font-size problem though: labels rasterise into
+   * Cesium's atlas at the DRAWING BUFFER's resolution, so on a high-DPI
+   * display they were being drawn into a 1x buffer and stretched. That is
+   * fixed in lib/cesium/perf.ts; this only makes the glyphs a comfortable
+   * size once they are actually sharp.
+   */
+  LABEL_FONT: '600 13px ui-sans-serif, system-ui, sans-serif',
+  LABEL_OUTLINE_PX: 3,
+
+  /**
+   * Codes shrink with distance instead of holding full size to
+   * LABEL_MAX_DISTANCE_M and then vanishing at once -- the same treatment
+   * SURVEY_PARCEL_VIEW gives parcel numbers, for the same reason: a floor
+   * plate covered in full-size codes at the far end of the range is the
+   * "smear" the distance cap exists to prevent, and shrinking gets there
+   * gradually rather than as a cliff.
+   */
+  LABEL_SCALE_NEAR_M: 60,
+  LABEL_SCALE_FAR: 0.65,
+
+  /**
    * Explode fractions (0-1 of the slider) between which units fade in on the
    * exploded stack. Below the first the storeys have not separated enough for a
    * flat to be visible on top of one; above the second they are fully up.

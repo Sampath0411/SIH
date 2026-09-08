@@ -4,7 +4,17 @@ import { useViewStore } from '@/lib/store';
 
 /**
  * Mode actions above the detail panel: step back out of the current level,
- * toggle underground, cut a section, and the disabled Measure/Share/Split group.
+ * and toggle underground.
+ *
+ * Slice used to live here too, in a second copy that checked only
+ * `activeBuildingId` -- so in the 2D GIS view it offered a cut the store
+ * would then refuse. NavDock's copy also excludes `gis2d` and is the one
+ * that survives; a toggle with two buttons and two different disable rules
+ * is a bug waiting for someone to find the wrong one.
+ *
+ * Measure, Share and Split are gone rather than disabled. Three permanently
+ * inert buttons in the panel a user looks at most is not a roadmap, it is
+ * noise; nothing in the application referenced them.
  */
 export default function ActionBar() {
   const mode = useViewStore((s) => s.mode);
@@ -15,9 +25,6 @@ export default function ActionBar() {
   const selectUnit = useViewStore((s) => s.selectUnit);
   const isolateFloor = useViewStore((s) => s.isolateFloor);
   const selectBuilding = useViewStore((s) => s.selectBuilding);
-  const activeBuildingId = useViewStore((s) => s.activeBuildingId);
-  const slice = useViewStore((s) => s.slice);
-  const setSlice = useViewStore((s) => s.setSlice);
 
   const back = () => {
     if (selectedUnitId !== null) return selectUnit(null);
@@ -55,39 +62,6 @@ export default function ActionBar() {
       >
         Underground
       </button>
-      <button
-        type="button"
-        disabled={activeBuildingId === null}
-        aria-pressed={slice.enabled}
-        onClick={() => setSlice({ enabled: !slice.enabled })}
-        title={
-          activeBuildingId === null
-            ? 'Slice — select a building first'
-            : 'Section cut through the active building'
-        }
-        className={[
-          'rounded px-2 py-1 text-[11px] transition-colors',
-          activeBuildingId === null
-            ? 'is-disabled text-[rgb(var(--muted))]'
-            : slice.enabled
-              ? 'is-active'
-              : 'text-[rgb(var(--ink))] tint-hover',
-        ].join(' ')}
-      >
-        Slice
-      </button>
-      <span className="mx-0.5 h-4 w-px bg-[rgb(var(--edge))]" />
-      {['Measure', 'Share', 'Split'].map((label) => (
-        <button
-          key={label}
-          type="button"
-          disabled
-          title={label + ' — not implemented'}
-          className="is-disabled rounded px-2 py-1 text-[11px] text-[rgb(var(--muted))]"
-        >
-          {label}
-        </button>
-      ))}
     </div>
   );
 }

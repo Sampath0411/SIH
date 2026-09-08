@@ -452,9 +452,10 @@ try {
     /not as-built utility records|No utility survey was consulted/i.test(body));
 
   // The redesign's point: the strata are individually switchable, and only the
-  // ones asked for are BUILT. Water is the only default, so before touching
-  // anything there must be exactly one category data source in the scene --
-  // once the terrain batch it hangs off has arrived.
+  // ones asked for are BUILT. Water and sewer are the defaults -- the pair a
+  // user opening this mode is actually asking about -- so before touching
+  // anything there must be exactly those two category data sources in the
+  // scene, and nothing else, once the terrain batch they hang off has arrived.
   const built = await waitFor(page, () => {
     const v = window.__ulpinViewer;
     if (!v) return false;
@@ -463,7 +464,7 @@ try {
     }
     return false;
   });
-  check('the default stratum builds once underground is on', built);
+  check('the default strata build once underground is on', built);
 
   const strata = await page.evaluate(() => {
     const v = window.__ulpinViewer;
@@ -476,17 +477,24 @@ try {
     return { seam: true, names: [...new Set(names)] };
   });
   check('viewer seam present', strata.seam);
-  check('only the default stratum is built', strata.names.length === 1
-    && strata.names[0] === 'utilities:water', strata.names.join(','));
+  // Exactly the defaults, and nothing beyond them. The second half is the
+  // half that matters: electrical has 95 runs in this project, so its absence
+  // here is the laziness being asserted rather than an empty category.
+  const DEFAULT_STRATA = ['utilities:sewer', 'utilities:water'];
+  check('only the default strata are built',
+    strata.names.slice().sort().join(',') === DEFAULT_STRATA.join(','),
+    strata.names.join(','));
+  check('a non-default stratum is NOT built up front',
+    !strata.names.includes('utilities:electrical'), strata.names.join(','));
 
-  // Switching a second category on builds it; nothing else is rebuilt.
+  // Switching a non-default category on builds it; nothing else is rebuilt.
   const toggled = await page.evaluate(() => {
     const el = [...document.querySelectorAll('label')]
-      .find((x) => x.getAttribute('aria-label') === 'Sewerage');
+      .find((x) => x.getAttribute('aria-label') === 'Electrical');
     if (el) el.click();
     return Boolean(el);
   });
-  check('a second stratum can be switched on', toggled);
+  check('a further stratum can be switched on', toggled);
   await sleep(2500);
   const after = await page.evaluate(() => {
     const v = window.__ulpinViewer;
@@ -497,14 +505,14 @@ try {
       const n = ds.name || '';
       if (!n.startsWith('utilities:')) continue;
       names.add(n.split('#')[0]);
-      if (n.startsWith('utilities:sewer')) {
+      if (n.startsWith('utilities:electrical')) {
         for (const e of ds.entities.values) if (e.polylineVolume) tubes++;
       }
     }
     return { names: [...names], tubes };
   });
-  check('the second stratum was built on demand',
-    after.names.includes('utilities:sewer'), after.names.join(','));
+  check('the further stratum was built on demand',
+    after.names.includes('utilities:electrical'), after.names.join(','));
   check('it carries geometry', after.tubes > 0, `${after.tubes} tubes`);
 
   // Every network must FOLLOW the ground rather than cut through it.
@@ -732,16 +740,47 @@ try {
   page.off('request', slowDetail);
   await page.setRequestInterception(false);
 
-  // -------------------------------------------------------- disabled controls
-  console.log('\n[9] DISABLED CONTROLS');
-  const disabled = await page.evaluate(() =>
-    [...document.querySelectorAll('button[disabled]')].map((b) => b.innerText.trim()),
-  );
-  // Slice is implemented now and is asserted live in [6]; the rest are
-  // still deliberately shown disabled rather than hidden.
-  for (const label of ['Measure', 'Share', 'Split']) {
-    check(`${label} rendered disabled`, disabled.includes(label), disabled.join(','));
+  // ------------------------------------------------------------ chrome trim
+  console.log('\n[9] CHROME');
+  // The inert controls are GONE, not disabled. This block used to assert the
+  // opposite -- that Measure, Share and Split each rendered as a disabled
+  // button -- so it is inverted rather than deleted: a stub quietly coming
+  // back is exactly the regression worth catching.
+  //
+  // SCOPED TO THE TWO PANELS THE STUBS LIVED IN, not to every button on the
+  // page. A document-wide search for 'Split' also matches LayerPanel's
+  // 3D / 2D / Split view selector, which is a different control that was
+  // never in scope -- and a check that fails on an unrelated panel's label is
+  // a check nobody will trust the next time it goes red.
+  const chrome = await page.evaluate(() => {
+    const read = (sel) => [...document.querySelectorAll(`${sel} button`)]
+      .map((b) => b.innerText.trim()).filter(Boolean);
+    return {
+      actions: read('[data-panel="actions"]'),
+      topbar: read('[data-panel="topbar"]'),
+      nav: read('[data-panel="nav"]'),
+    };
+  });
+  for (const label of ['Measure', 'Share', 'Split', 'Slice']) {
+    check(`${label} is gone from the action bar`,
+      !chrome.actions.includes(label), chrome.actions.join(','));
   }
+  for (const label of ['Layers', 'Tools', 'Measurements', 'Share']) {
+    check(`${label} is gone from the top bar`,
+      !chrome.topbar.includes(label), chrome.topbar.join(','));
+  }
+  for (const label of ['Pan', 'Zoom', 'Auto-spin']) {
+    check(`${label} is gone from the dock`,
+      !chrome.nav.includes(label), chrome.nav.join(','));
+  }
+  // What must survive the trim.
+  check('the dock keeps Orbit, Reset view, 2D GIS and Slice',
+    ['Orbit', 'Reset view', '2D GIS', 'Slice']
+      .every((l) => chrome.nav.includes(l)), chrome.nav.join(','));
+  check('the top bar keeps Stats', chrome.topbar.includes('Stats'),
+    chrome.topbar.join(','));
+  check('the action bar keeps Underground',
+    chrome.actions.includes('Underground'), chrome.actions.join(','));
 
   // ------------------------------------------------------------- console
   console.log('\n[10] CONSOLE');

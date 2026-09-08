@@ -243,9 +243,9 @@ input[type='range']:disabled::-moz-range-thumb { background: rgb(var(--muted-2))
 .swatch-danger { background-color: rgb(var(--danger)); border-color: rgb(var(--danger)); }
 
 /* Attribution is a licence obligation (Esri, Maxar, CARTO, OSM), so the credit
-   container is never hidden. Position only -- text, colour and the ion logo are
-   left exactly as Cesium renders them; this just lifts the box clear of the
-   StatusBar. The offset shrinks on small screens where the bar is shorter. */
+   container is never hidden. Position only -- text and colour are left exactly
+   as Cesium renders them; this just lifts the box clear of the StatusBar. The
+   offset shrinks on small screens where the bar is shorter. */
 /*
  * !important, and deliberately.
  *
@@ -264,6 +264,48 @@ input[type='range']:disabled::-moz-range-thumb { background: rgb(var(--muted-2))
   bottom: var(--credit-bottom, 34px) !important;
   left: 8px !important;
   z-index: 30;
+}
+
+/*
+ * The Cesium ion logo, and ONLY the logo.
+ *
+ * Everything else in that container stays: the Esri / Maxar / Earthstar,
+ * CARTO, OpenStreetMap and Google credit strings are licence obligations and
+ * the rule above exists to keep them visible. This hides the ion wordmark
+ * next to them, which is a Cesium BRANDING requirement rather than a
+ * third-party attribution.
+ *
+ * That distinction is the whole point: removing the ion logo is permitted
+ * under a Cesium ion commercial licence and not under the free tier, so this
+ * rule is a commercial-licence dependency, not a styling choice. The data
+ * attribution beside it is not ours to remove under any licence.
+ *
+ * Targets the logo's own container rather than the anchor inside it, so the
+ * empty box does not keep its margin and shove the text credits right.
+ */
+.cesium-credit-logoContainer,
+.cesium-viewer .cesium-credit-logoContainer {
+  display: none !important;
+}
+
+/*
+ * The "Upgrade for commercial use." upsell that rides beside the logo.
+ *
+ * TARGETED BY HREF, not by its container. It lives in
+ * .cesium-credit-textContainer, which is ALSO where any provider asking for
+ * on-screen credit is rendered -- Google's photorealistic tiles set
+ * showCreditsOnScreen: true and land exactly there (lib/cesium/photoreal.ts).
+ * Hiding the container would therefore suppress a third-party licence
+ * obligation to remove one line of Cesium's own marketing, which is the one
+ * thing this whole block must not do. The pricing link is unambiguously
+ * Cesium's, so that is what is matched.
+ *
+ * The "Data attribution" expander beside it is deliberately untouched: it is
+ * how the Esri / Maxar / CARTO / OSM credits are reached.
+ */
+.cesium-widget-credits a[href*="cesium.com/pricing"],
+.cesium-viewer .cesium-widget-credits a[href*="cesium.com/pricing"] {
+  display: none !important;
 }
 
 @keyframes conflict-pulse {

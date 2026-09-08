@@ -196,7 +196,10 @@ export default function CesiumRoot(
 
       // The credit container is left exactly as Cesium builds it. Esri, Maxar
       // and OSM attribution are licence obligations, not chrome; globals.css
-      // only moves the box clear of the StatusBar.
+      // only moves the box clear of the StatusBar -- and hides the ion
+      // wordmark beside it, which is Cesium branding rather than third-party
+      // attribution and which a commercial ion licence permits removing. The
+      // two rules live together in globals.css so they cannot drift apart.
 
       // Imagery is not added here. The provider effect below owns layer 0 and
       // runs on mount like any other, so there is one code path for the first

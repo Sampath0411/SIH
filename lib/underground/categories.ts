@@ -36,8 +36,7 @@ export type UtilityCategory =
   | 'water'
   | 'drainage'
   | 'sewer'
-  | 'foundations'
-  | 'metro';
+  | 'foundations';
 
 /**
  * A depth band, in metres BELOW LOCAL GROUND. Both bounds are negative and
@@ -87,8 +86,8 @@ export interface UndergroundLayer {
    * underground camera is a single smear. These are spread far wider and
    * alternate sides, the way services are actually laid.
    *
-   * Zero for the two categories that are not road corridors: foundations
-   * belong to a building, and a metro bore runs deep and central.
+   * Zero for the one category that is not a road corridor: foundations
+   * belong to a building rather than to a verge.
    */
   lane: number;
   /**
@@ -121,10 +120,15 @@ export interface UndergroundLayer {
  * carries, and lib/underground.test.ts asserts it -- so a later edit that
  * quietly reintroduces an overlap fails the suite rather than the demo.
  *
- * The three colours that already existed (water blue, sewer brown, electrical
- * amber, metro violet) are kept at their exact previous values so the two
- * shipped projects look unchanged. The new categories take hues clear of
- * those, clear of the built-form green, and clear of CONFLICT_COLOR's red.
+ * The colours that already existed (water blue, sewer brown, electrical
+ * amber) are kept at their exact previous values so the two shipped projects
+ * look unchanged. The new categories take hues clear of those, clear of the
+ * built-form green, and clear of CONFLICT_COLOR's red.
+ *
+ * METRO IS NOT IN THIS LIST. Visakhapatnam has no metro, and a violet tunnel
+ * 14 m under the demonstration AOI was the most confidently wrong thing in
+ * the scene. categoryOfAssetType() refuses the stored type rather than the
+ * snapshots being rewritten -- see the note there.
  */
 export const UNDERGROUND_LAYERS: readonly UndergroundLayer[] = [
   {
@@ -168,13 +172,30 @@ export const UNDERGROUND_LAYERS: readonly UndergroundLayer[] = [
     order: 3,
   },
   {
+    /**
+     * WIDER THAN THE REST, ON PURPOSE.
+     *
+     * Water and sewer are the two categories that come on by default, so they
+     * are the pair a user sees first and the pair that has to read as two
+     * things. At the recorded depths -- water -1.5 m, sewer -3.0 m -- and the
+     * old -6.5 m lane they sat 1.5 m apart vertically and 3.5 m apart in
+     * plan, which from the 70-130 m underground camera is one smear.
+     *
+     * The 2.5 m clearance is what separates them: resolveCategoryDepths()
+     * pushes sewer down to 2.5 m clear of whatever sits above it, and the
+     * band floor at -4.4 m is what lets it (it still clears the -4.5 m
+     * foundations ceiling, so the bands stay pairwise disjoint). The lane
+     * widening does the same job in plan. Both are DISPLAY offsets and both
+     * are already disclosed by the detail panel's "Drawn for clarity" box --
+     * the stored depth and coordinates are untouched.
+     */
     key: 'sewer',
     label: 'Sewerage',
     assetLabel: 'Sewer main',
     colour: '#B45309',
-    band: { min: -3.8, max: -3.0, nominal: -3.2 },
-    lane: -6.5,
-    clearance: 0.5,
+    band: { min: -4.4, max: -3.0, nominal: -3.4 },
+    lane: -9.0,
+    clearance: 2.5,
     order: 4,
   },
   {
@@ -190,16 +211,6 @@ export const UNDERGROUND_LAYERS: readonly UndergroundLayer[] = [
     clearance: 0.8,
     order: 5,
   },
-  {
-    key: 'metro',
-    label: 'Metro tunnel',
-    assetLabel: 'Metro tunnel',
-    colour: '#C084FC',
-    band: { min: -22.0, max: -13.0, nominal: -14.0 },
-    lane: 0,
-    clearance: 1.0,
-    order: 6,
-  },
 ];
 
 export const UNDERGROUND_BY_KEY: Record<UtilityCategory, UndergroundLayer> =
@@ -214,18 +225,20 @@ export const UNDERGROUND_ORDER: readonly UtilityCategory[] =
 /**
  * Which categories are on when nothing has said otherwise.
  *
- * Water only. Underground is a specialist mode and six networks at once is
- * the clutter this redesign exists to remove -- the user turns on what they
- * came to look at.
+ * Water and sewer. They are the two networks anyone opening this mode is
+ * actually asking about -- what runs under this road, and what is it going to
+ * hit -- and they are the pair the layout is tuned to separate (see the
+ * sewer entry above). Everything else stays off: underground is a specialist
+ * mode and five networks at once is the clutter this redesign exists to
+ * remove, so the user turns on the rest of what they came to look at.
  */
 export const UNDERGROUND_DEFAULTS: Record<UtilityCategory, boolean> = {
   telecom: false,
   electrical: false,
   water: true,
   drainage: false,
-  sewer: false,
+  sewer: true,
   foundations: false,
-  metro: false,
 };
 
 /**
@@ -247,7 +260,11 @@ export function categoryOfAssetType(t: string): UtilityCategory | null {
     case 'sewer': return 'sewer';
     case 'power': return 'electrical';
     case 'electrical': return 'electrical';
-    case 'metro': return 'metro';
+    // Visakhapatnam has no metro. The stored runs are left in the snapshots
+    // and in the CHECK constraint -- this is the DISPLAY taxonomy and the
+    // cadastre is not being migrated -- but nothing draws them, which is what
+    // returning null means everywhere else in this switch.
+    case 'metro': return null;
     case 'telecom': return 'telecom';
     case 'drainage': return 'drainage';
     case 'foundation':

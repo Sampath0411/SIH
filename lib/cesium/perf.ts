@@ -68,16 +68,41 @@ export interface PerformanceProfile {
 /**
  * Apply the quality profile to a freshly constructed viewer.
  *
- * Weak GPU: render at 1.0 CSS pixel per pixel (a DPR-3 phone canvas is 9x
- * the fragments of a DPR-1 one for the same view), accept slightly coarser
- * globe tiles (maximumScreenSpaceError 3.5 vs the 2 default), keep a smaller
- * tile cache, skip MSAA and lean on FXAA instead -- one cheap full-screen
- * pass rather than 4x multisampled geometry.
+ * DEVICE PIXEL RATIO, AND THE FLAG THAT WAS INVERTED
+ * --------------------------------------------------
+ * Cesium sizes the drawing buffer as
  *
- * Strong GPU: leave the sharp defaults in place and spend the headroom on
- * 4x MSAA (WebGL2 render-target multisampling -- the antialiasing that makes
- * the roof ridge lines and floor rims read cleanly) and a deeper tile cache
- * so panning around the AOI does not re-fetch tiles it just dropped.
+ *     canvas.width = cssWidth * resolutionScale
+ *                  * (useBrowserRecommendedResolution ? 1 : devicePixelRatio)
+ *
+ * so the flag reads backwards from its name: `true` -- the Viewer default --
+ * pins the buffer at ONE pixel per CSS pixel and lets the compositor stretch
+ * it up to the physical panel, and `false` is what matches the display.
+ *
+ * This file previously set it to `false` on the WEAK path, under a comment
+ * claiming that rendered "at 1.0 CSS pixel per pixel". It did the opposite:
+ * a DPR-3 phone was asked for 9x the fragments precisely where there was no
+ * budget for them, while every high-DPI DESKTOP -- which never entered this
+ * branch -- kept the stretched 1x buffer and drew soft edges and visibly
+ * blurred text. Unit codes and parcel numbers are rasterised into a label
+ * atlas at the buffer's resolution, so they were the first thing to smear.
+ *
+ * Both branches are therefore flipped to what they always meant:
+ *
+ * Weak GPU: `true` -- one pixel per CSS pixel, which is the cheap path.
+ * Also accept slightly coarser globe tiles (maximumScreenSpaceError 3.5 vs
+ * the 2 default), keep a smaller tile cache, skip MSAA and lean on FXAA
+ * instead -- one cheap full-screen pass rather than 4x multisampled geometry.
+ *
+ * Strong GPU: `false` -- render at the panel's real resolution, which is what
+ * makes text crisp. Spend the rest of the headroom on 4x MSAA (WebGL2
+ * render-target multisampling -- the antialiasing that makes the roof ridge
+ * lines and floor rims read cleanly) and a deeper tile cache so panning
+ * around the AOI does not re-fetch tiles it just dropped.
+ *
+ * attachAdaptiveResolution() below is the safety net either way: it backs
+ * `resolutionScale` off when frames actually get expensive, so the sharp path
+ * degrades under load instead of dropping frames.
  */
 export function applyPerformanceProfile(
   viewer: Cesium.Viewer,
@@ -85,11 +110,12 @@ export function applyPerformanceProfile(
 ): void {
   const scene = viewer.scene;
   if (profile.lowEnd) {
-    viewer.useBrowserRecommendedResolution = false;
+    viewer.useBrowserRecommendedResolution = true;
     scene.globe.maximumScreenSpaceError = 3.5;
     scene.globe.tileCacheSize = 60;
     scene.postProcessStages.fxaa.enabled = true;
   } else {
+    viewer.useBrowserRecommendedResolution = false;
     scene.globe.tileCacheSize = 200;
     scene.postProcessStages.fxaa.enabled = false;
   }

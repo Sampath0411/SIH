@@ -77,7 +77,7 @@ function pipelineRun(
 
 test('a flat-Z run over 63 m of relief stays below local ground', () => {
   for (const [assetType, depth] of [
-    ['power', -1.0], ['water', -1.5], ['sewer', -3.0], ['metro', -14.0],
+    ['power', -1.0], ['water', -1.5], ['sewer', -3.0],
   ] as const) {
     const out = layoutRun(pipelineRun(assetType, depth), { field: hillyField });
     assert.ok(out, `${assetType} should have a category`);
@@ -211,18 +211,47 @@ test('two categories laid on one centreline are separated laterally on screen', 
 // Category resolution.
 // ---------------------------------------------------------------------------
 
-test('well-separated recorded depths are left exactly where they are', () => {
-  // The depths the two shipped projects actually carry.
+test('recorded depths that already clear each other are left alone', () => {
+  // The depths the two shipped projects actually carry, minus sewer -- which
+  // now carries a deliberately wide clearance and is asserted separately
+  // below, because it is one of the two default-on categories.
   const features = [
     ...Array.from({ length: 95 }, () => ({ properties: { id: 1, asset_type: 'power', depth_m: -1.0, radius_m: 0.2 } })),
     ...Array.from({ length: 96 }, () => ({ properties: { id: 2, asset_type: 'water', depth_m: -1.5, radius_m: 0.25 } })),
-    ...Array.from({ length: 96 }, () => ({ properties: { id: 3, asset_type: 'sewer', depth_m: -3.0, radius_m: 0.4 } })),
-    ...Array.from({ length: 15 }, () => ({ properties: { id: 4, asset_type: 'metro', depth_m: -14.0, radius_m: 3.2 } })),
   ];
   const adjust = resolveCategoryDepths(features);
   for (const key of UNDERGROUND_ORDER) {
     assert.equal(adjust[key], 0, `${key} should not have been moved`);
   }
+});
+
+test('the two default-on categories are pushed visibly apart', () => {
+  // Water and sewer come on together, so they are the pair that has to read
+  // as two networks rather than one smear. This is the assertion that the
+  // sewer clearance in the registry is actually doing that work: at the
+  // recorded depths the gap is 1.5 m, and the resolver has to widen it.
+  const features = [
+    ...Array.from({ length: 96 }, () => ({ properties: { id: 1, asset_type: 'water', depth_m: -1.5, radius_m: 0.25 } })),
+    ...Array.from({ length: 96 }, () => ({ properties: { id: 2, asset_type: 'sewer', depth_m: -3.0, radius_m: 0.4 } })),
+  ];
+  const adjust = resolveCategoryDepths(features);
+  assert.equal(adjust.water, 0, 'the shallower of the pair holds its depth');
+  const gap = Math.abs((-3.0 + adjust.sewer) - (-1.5 + adjust.water));
+  assert.ok(
+    gap >= UNDERGROUND_BY_KEY.sewer.clearance - 1e-9,
+    `expected at least ${UNDERGROUND_BY_KEY.sewer.clearance} m between water `
+    + `and sewer, got ${gap.toFixed(2)} m`,
+  );
+  // And it must not have fallen through its own band floor to get there.
+  assert.ok(
+    -3.0 + adjust.sewer >= UNDERGROUND_BY_KEY.sewer.band.min - 1e-9,
+    'sewer was pushed past its band floor',
+  );
+  // Laterally too: the corridors are on opposite... same verge, far apart.
+  assert.ok(
+    Math.abs(UNDERGROUND_BY_KEY.sewer.lane - UNDERGROUND_BY_KEY.water.lane) >= 5,
+    'water and sewer corridors are too close in plan',
+  );
 });
 
 test('colliding recorded depths are pushed apart by the clearance', () => {
@@ -251,9 +280,9 @@ test('one deep outlier does not drag its whole category down', () => {
 
 test('a category with no runs contributes no ceiling', () => {
   const adjust = resolveCategoryDepths([
-    { properties: { id: 1, asset_type: 'metro', depth_m: -14.0, radius_m: 3.2 } },
+    { properties: { id: 1, asset_type: 'telecom', depth_m: -0.7, radius_m: 0.1 } },
   ]);
-  assert.equal(adjust.metro, 0);
+  assert.equal(adjust.telecom, 0);
   assert.equal(adjust.water, 0);
 });
 
@@ -265,7 +294,8 @@ test('the stored asset types map onto display categories', () => {
   assert.equal(categoryOfAssetType('water'), 'water');
   assert.equal(categoryOfAssetType('sewer'), 'sewer');
   assert.equal(categoryOfAssetType('power'), 'electrical');
-  assert.equal(categoryOfAssetType('metro'), 'metro');
+  // Visakhapatnam has no metro: the stored type is refused, not mapped.
+  assert.equal(categoryOfAssetType('metro'), null);
   assert.equal(categoryOfAssetType('telecom'), 'telecom');
   assert.equal(categoryOfAssetType('drainage'), 'drainage');
   assert.equal(categoryOfAssetType('foundation'), 'foundations');

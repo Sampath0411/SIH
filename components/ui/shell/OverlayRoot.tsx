@@ -88,10 +88,12 @@ export default function OverlayRoot() {
     setStatsOpen(sheetTab === 'stats');
   }, [regime, sheetTab, setStatsOpen]);
 
-  // The drawer only exists at medium width; leaving it "open" behind a regime
-  // change would strand the flag and hide the reopen affordance.
+  // The drawer only exists at medium width. Leaving it "open" behind a regime
+  // change would strand the flag; leaving it CLOSED behind one is now the
+  // worse failure, because the TopBar no longer carries a button to reopen it
+  // -- so the regime restores the open default rather than only clearing it.
   useEffect(() => {
-    if (regime !== 'medium') setDrawerOpen(false);
+    setDrawerOpen(regime === 'medium');
   }, [regime, setDrawerOpen]);
 
   // ------------------------------------------------------------- compact --
@@ -159,11 +161,33 @@ export default function OverlayRoot() {
     return (
       <div className="pointer-events-none absolute inset-0 z-20">
         <div className="absolute left-3 right-3 top-3">
-          <TopBar
-            onLayersClick={() => setDrawerOpen(!drawerOpen)}
-            layersOpen={drawerOpen}
-          />
+          <TopBar />
         </div>
+
+        {/*
+          The drawer's own disclosure, on its edge rather than in the top bar.
+
+          It rides the same `left` transition as the FloorLadder below, so it
+          stays welded to the panel edge instead of jumping when the drawer
+          slides. `aria-expanded` / `aria-controls` carry the contract the
+          removed TopBar button used to hold, which is what a keyboard user is
+          owed by a non-modal disclosure.
+        */}
+        <button
+          type="button"
+          onClick={() => setDrawerOpen(!drawerOpen)}
+          aria-expanded={drawerOpen}
+          aria-controls="layer-drawer"
+          title={drawerOpen ? 'Collapse the layer panel' : 'Show the layer panel'}
+          className={[
+            'glass pointer-events-auto absolute top-1/2 z-10 -translate-y-1/2 rounded',
+            'px-1 py-3 text-[11px] leading-none text-[rgb(var(--ink))] tint-hover',
+            'transition-[left] duration-200',
+            drawerOpen ? 'left-[238px]' : 'left-3',
+          ].join(' ')}
+        >
+          {drawerOpen ? '‹' : '›'}
+        </button>
 
         <div className="absolute bottom-[46px] left-3 top-[68px]">
           <Drawer

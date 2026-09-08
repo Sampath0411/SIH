@@ -1380,24 +1380,6 @@
         "Runs": "Beneath the flyover deck",
         "Geometry": "OpenStreetMap"
       }
-    },
-    {
-      "ref": "TTF-JCT-01",
-      "kind": "junction",
-      "shape": "box",
-      "label": "Asilmetta junction",
-      "lod": "far",
-      "x": 0,
-      "y": 0,
-      "w": 74,
-      "d": 74,
-      "base": 0.02,
-      "height": 0.06,
-      "meta": {
-        "Type": "At-grade crossing beneath the flyover",
-        "Arms": 4,
-        "Position": "17.725023, 83.302461"
-      }
     }
   ]
 }

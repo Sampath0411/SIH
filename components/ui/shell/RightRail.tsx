@@ -20,6 +20,19 @@ import StatsPanel from '../StatsPanel';
  * `min-height: auto` refuses to shrink below its content, so without it the
  * body grows to its natural height and pushes ParcelInset off the bottom of
  * the screen instead of scrolling.
+ *
+ * THE 60 / 40 SPLIT. The body used to be `flex-1` against a natural-height
+ * ParcelInset, which meant the inset's 178px square took whatever it wanted
+ * and the body took the rest. That is the wrong way round for the longest
+ * card in the application -- a titled unit carries a ULPIN card, a chip row
+ * and six sections -- so the two share the column 3:2 instead, and BOTH
+ * scroll. The inset can now be scrolled to rather than shrunk, so its map
+ * stays at a legible size on a laptop.
+ *
+ * `empty:hidden` on the inset's wrapper is what keeps city view honest:
+ * ParcelInset returns null with nothing selected, and a wrapper holding a
+ * null child matches `:empty`, so the 40% is given back to the body rather
+ * than left as a hole.
  */
 export default function RightRail({
   /** Medium regime folds StatsPanel into the rail; at full width it sits beside it. */
@@ -33,11 +46,13 @@ export default function RightRail({
       {withStats ? <StatsPanel /> : null}
       <div
         data-panel="rail-body"
-        className="pointer-events-auto min-h-0 flex-1 overflow-y-auto pr-0.5"
+        className="pointer-events-auto min-h-0 flex-[3] overflow-y-auto pr-0.5"
       >
         <DetailPanel />
       </div>
-      <ParcelInset />
+      <div className="pointer-events-auto min-h-0 flex-[2] overflow-y-auto pr-0.5 empty:hidden">
+        <ParcelInset />
+      </div>
     </div>
   );
 }

@@ -6,9 +6,16 @@ import { useViewStore } from '@/lib/store';
 /**
  * Bottom-centre navigation dock.
  *
- * Orbit / Pan / Zoom set which gestures the camera controller accepts (applied
- * in CesiumRoot). Reset and Auto-spin write store state that CameraDirector
- * acts on. Nothing here calls a camera method directly.
+ * Orbit sets which gestures the camera controller accepts (applied in
+ * CesiumRoot). Reset writes store state that CameraDirector acts on. Nothing
+ * here calls a camera method directly.
+ *
+ * ORBIT IS THE ONLY NAVIGATION MODE. Pan and Zoom used to sit beside it, each
+ * one a SUBTRACTION -- Pan switched rotation and tilt off, Zoom switched
+ * everything but the wheel off. Orbit already accepts all three gestures, so
+ * the other two modes could only ever take capability away from a user who
+ * had not asked for less. `navMode` stays in the store and CesiumRoot still
+ * reads it; it simply has one reachable value now.
  *
  * Slice toggles the section cut through the active building. It needs one to
  * cut, so it is disabled in city view; the axis and the plane position live in
@@ -32,8 +39,6 @@ export default function NavDock({
 }: { compact?: boolean } = {}) {
   const navMode = useViewStore((s) => s.navMode);
   const setNavMode = useViewStore((s) => s.setNavMode);
-  const autoSpin = useViewStore((s) => s.autoSpin);
-  const setAutoSpin = useViewStore((s) => s.setAutoSpin);
   const resetView = useViewStore((s) => s.resetView);
   const slice = useViewStore((s) => s.slice);
   const setSlice = useViewStore((s) => s.setSlice);
@@ -78,21 +83,20 @@ export default function NavDock({
         compact ? '[&_button]:min-h-[36px]' : '',
       ].join(' ')}
     >
-      {(['orbit', 'pan', 'zoom'] as const).map((m) => (
-        <button
-          key={m}
-          type="button"
-          onClick={() => setNavMode(m)}
-          className={[
-            'rounded px-2.5 py-1 text-[11px] capitalize transition-colors',
-            navMode === m
-              ? 'is-active'
-              : 'text-[rgb(var(--ink))] tint-hover',
-          ].join(' ')}
-        >
-          {m}
-        </button>
-      ))}
+      <button
+        type="button"
+        onClick={() => setNavMode('orbit')}
+        aria-pressed={navMode === 'orbit'}
+        title="Drag to orbit and tilt; drag with the right button, or scroll, to zoom"
+        className={[
+          'rounded px-2.5 py-1 text-[11px] transition-colors',
+          navMode === 'orbit'
+            ? 'is-active'
+            : 'text-[rgb(var(--ink))] tint-hover',
+        ].join(' ')}
+      >
+        Orbit
+      </button>
 
       <span className="mx-1 h-4 w-px bg-[rgb(var(--edge))]" />
 
@@ -102,18 +106,6 @@ export default function NavDock({
         className="rounded px-2.5 py-1 text-[11px] text-[rgb(var(--ink))] tint-hover"
       >
         Reset view
-      </button>
-      <button
-        type="button"
-        onClick={() => setAutoSpin(!autoSpin)}
-        className={[
-          'rounded px-2.5 py-1 text-[11px] transition-colors',
-          autoSpin
-            ? 'is-active'
-            : 'text-[rgb(var(--ink))] tint-hover',
-        ].join(' ')}
-      >
-        Auto-spin
       </button>
 
       <span className="mx-1 h-4 w-px bg-[rgb(var(--edge))]" />
