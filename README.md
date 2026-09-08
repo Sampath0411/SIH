@@ -537,8 +537,9 @@ Underground mode pulses them red and names the planted one first.
 ## Verifying
 
 ```bash
-npm test            # ULPIN round-trip + SQL-parity assertions
+npm test            # ULPIN round-trip + SQL-parity assertions, datum, topology
 npm run verify:ui   # drives a real Chrome through all five view modes
+npm run check:volumetric  # interior volumes, retail plan, clash engine, deeds
 npm run check:roads # street picking, tolerance, deselect, building precedence
 npm run check:edit  # read-only guarantees, validation, save, persistence
 npm run check:rwd   # four viewports x two pages: layout, collisions, colour audit
