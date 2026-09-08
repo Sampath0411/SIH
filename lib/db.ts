@@ -10,7 +10,14 @@ import type {
 import { enrichBuilding, enrichCollection, type UnitFacts } from './mock/building';
 import { allEdits, editsFor, editsRev } from './data/edits';
 import type { BuildingEdit } from './data/building-schema';
-import { API_DIR, DEFAULT_SLUG, PROJECTS_DIR, isValidSlug } from './projects';
+import { API_DIR, DEFAULT_SLUG, PROJECTS_DIR, findProject, isValidSlug } from './projects';
+import { DISCLAIMER } from './ulpin';
+import { heightRange, rrrFromRegister } from './ladm';
+import type {
+  LADMBAUnit, LADMDimension, LADMMemberRole, LADMParcelDoc, LADMParty,
+  LADMProvenance, LADMRRR, LADMRRRClass, LADMRRRType, LADMSpatialUnit,
+  LADMSpatialUnitType,
+} from './ladm';
 import { detectClashes } from './topology';
 import type {
   ClashFinding, ClashParty, ClashPartyType, RunInput, VolumeInput,
@@ -1562,4 +1569,376 @@ export async function getTopology(slug: string): Promise<ClashFinding[]> {
   }
 
   return [...detectClashes({ runs, volumes, clearanceOf }), ...air];
+}
+
+
+// ---------------------------------------------------------------------------
+// ISO 19152 (LADM)
+//
+// One document per spatial unit, assembled from three sources that each own a
+// different part of it:
+//
+//   * the la_* REGISTRY (migration 007) -- who holds what, in what bundle,
+//     under which right;
+//   * the CADASTRE, reached through la_spatial_unit_v, for the geometry and
+//     the vertical extent, which the registry deliberately does not copy;
+//   * the FLAT REGISTER, a committed file, for the charge, the tax demand and
+//     the parking allocation. Projected on read by lib/ladm.ts and never
+//     migrated into PostGIS -- lib/db.ts:254-270 has the reasoning, and it is
+//     also what makes those three fields identical on both backends.
+//
+// THE REGISTER LAYER RUNS ON BOTH PATHS, deliberately. Everything the
+// projection can answer is answered by SQL on PostGIS and by ladm.json on the
+// snapshot; everything the register answers is layered on afterwards, from the
+// same file, by the same code. That is the shape that stops the two backends
+// serving different documents -- the property `check:gis2d` already asserts
+// for survey parcels.
+// ---------------------------------------------------------------------------
+
+/** The registry document as both backends serve it, before the register. */
+interface LadmRaw {
+  su: {
+    su_id: string;
+    su_type: LADMSpatialUnitType;
+    dimension: LADMDimension;
+    source_kind: 'parcel' | 'survey_parcel' | 'unit' | 'utility';
+    source_id: number;
+    provenance: LADMProvenance;
+    z_min: number | null;
+    z_max: number | null;
+    volume_m3: number | null;
+    label: string | null;
+    ring: Ring | null;
+  } | null;
+  ba_unit: {
+    ba_unit_id: number;
+    ba_ulpin: string;
+    name: string;
+    ba_type: 'basic_administrative_unit' | 'condominium_unit';
+    ulpin_14: string | null;
+    members: Array<{
+      su_id: string;
+      member_role: LADMMemberRole;
+      share_num: number;
+      share_den: number;
+      su_type: LADMSpatialUnitType;
+      label: string | null;
+    }>;
+  } | null;
+  rrrs: Array<{
+    rrr_id: number;
+    rrr_class: LADMRRRClass;
+    rrr_type: LADMRRRType;
+    share_num: number;
+    share_den: number;
+    time_spec_from: string | null;
+    time_spec_to: string | null;
+    amount_inr: number | null;
+    reference: string | null;
+    description: string | null;
+    party: LADMParty | null;
+  }>;
+  easements: Array<{
+    su_id: string;
+    label: string | null;
+    z_min: number | null;
+    z_max: number | null;
+    authority: string | null;
+    asset_type: string | null;
+    description: string | null;
+  }>;
+}
+
+const EMPTY_LADM: LadmRaw = { su: null, ba_unit: null, rrrs: [], easements: [] };
+
+/**
+ * The plan ring of a spatial unit, whatever geometry its source stores.
+ *
+ * A unit's solid is a POLYHEDRALSURFACE whose first face is the floor plate --
+ * the same extraction detailSql already does for a unit's ring. A parcel is a
+ * Polygon and a utility centreline a LineString, and both survive ST_Force2D
+ * whole. Written once here rather than three times in the query below.
+ */
+const SU_RING_SQL = `
+  CASE WHEN GeometryType(s.geom_3d) = 'POLYHEDRALSURFACE'
+       THEN ST_AsGeoJSON(ST_Force2D(ST_GeometryN(s.geom_3d, 1)), 7)::json
+       ELSE ST_AsGeoJSON(ST_Force2D(s.geom_3d), 7)::json END`;
+
+/**
+ * The whole LADM document for one spatial unit, in one round trip.
+ *
+ * Assembled with json_build_object like every other reader here rather than as
+ * five queries stitched together in TypeScript: the nesting is the shape the
+ * API serves, and building it in SQL is what keeps the snapshot -- which is a
+ * dump of exactly this -- field for field identical.
+ */
+function ladmSql(scope: Scope, suId: string) {
+  const f = filter(scope, 'AND s.project_id = $P', [suId]);
+  return {
+    sql: `
+  WITH s AS (
+    SELECT * FROM la_spatial_unit_v s WHERE s.su_id = $1 ${f.clause}
+  )
+  SELECT json_build_object(
+    'su', (SELECT json_build_object(
+              'su_id', s.su_id, 'su_type', s.su_type, 'dimension', s.dimension,
+              'source_kind', s.source_kind, 'source_id', s.source_id,
+              'provenance', s.provenance,
+              'z_min', s.z_min, 'z_max', s.z_max, 'volume_m3', s.volume_m3,
+              'label', COALESCE(u.label, u.unit_no, 'Plot ' || s.su_id),
+              'ring', ${SU_RING_SQL})
+             FROM s LEFT JOIN unit u ON s.source_kind = 'unit' AND u.id = s.source_id),
+
+    'ba_unit', (SELECT json_build_object(
+              'ba_unit_id', ba.ba_unit_id, 'ba_ulpin', ba.ba_ulpin,
+              'name', ba.name, 'ba_type', ba.ba_type, 'ulpin_14', ba.ulpin_14,
+              'members', COALESCE((
+                 SELECT json_agg(json_build_object(
+                          'su_id', m.su_id, 'member_role', m.member_role,
+                          'share_num', m.share_num, 'share_den', m.share_den,
+                          'su_type', ms.su_type,
+                          'label', COALESCE(mu.label, mu.unit_no, 'Plot ' || m.su_id))
+                        ORDER BY m.member_role, m.su_id)
+                   FROM la_ba_unit_member m
+                   JOIN la_spatial_unit ms ON ms.su_id = m.su_id
+                   LEFT JOIN unit mu ON ms.source_kind = 'unit' AND mu.id = ms.source_id
+                  WHERE m.ba_unit_id = ba.ba_unit_id), '[]'::json))
+             FROM s
+             JOIN la_ba_unit_member pm ON pm.su_id = s.su_id
+                                      AND pm.member_role = 'principal'
+             JOIN la_ba_unit ba ON ba.ba_unit_id = pm.ba_unit_id
+             LIMIT 1),
+
+    'rrrs', COALESCE((
+             SELECT json_agg(json_build_object(
+                      'rrr_id', r.rrr_id, 'rrr_class', r.rrr_class,
+                      'rrr_type', r.rrr_type,
+                      'share_num', r.share_num, 'share_den', r.share_den,
+                      'time_spec_from', r.time_spec_from,
+                      'time_spec_to', r.time_spec_to,
+                      'amount_inr', r.amount_inr, 'reference', r.reference,
+                      'description', r.description,
+                      'party', CASE WHEN pa.party_id IS NULL THEN NULL ELSE
+                                 json_build_object('party_id', pa.party_id,
+                                   'name', pa.name, 'party_type', pa.party_type,
+                                   'role', pa.role,
+                                   'authority_code', pa.authority_code) END)
+                    ORDER BY r.rrr_class, r.rrr_id)
+               FROM s
+               JOIN la_ba_unit_member pm ON pm.su_id = s.su_id
+                                        AND pm.member_role = 'principal'
+               JOIN la_rrr r ON r.ba_unit_id = pm.ba_unit_id
+               LEFT JOIN la_party pa ON pa.party_id = r.party_id), '[]'::json),
+
+    'easements', COALESCE((
+             SELECT json_agg(json_build_object(
+                      'su_id', es.su_id,
+                      'label', initcap(ut.asset_type) || ' corridor '
+                               || COALESCE(ut.ref, ut.id::text),
+                      'z_min', es.z_min, 'z_max', es.z_max,
+                      'authority', ut.authority, 'asset_type', ut.asset_type,
+                      'description', er.description)
+                    ORDER BY es.su_id)
+               FROM s
+               JOIN la_spatial_unit es ON es.project_id = s.project_id
+                                      AND es.source_kind = 'utility'
+               JOIN utility ut ON ut.id = es.source_id
+               LEFT JOIN la_ba_unit eb ON eb.ba_ulpin = es.su_id || '-BA'
+               LEFT JOIN la_rrr er ON er.ba_unit_id = eb.ba_unit_id
+                                  AND er.rrr_type = 'easement'
+              -- THE CENTRELINE PLUS ITS RADIUS, NOT THE ENVELOPE.
+              --
+              -- utility.envelope_3d is a POLYHEDRALSURFACE, and every GEOS
+              -- predicate -- ST_Intersects included -- refuses one outright:
+              -- "Unknown geometry type: 13 - PolyhedralSurface". The failure
+              -- was invisible for a volume, because the z-range test happened
+              -- to prune every candidate before the predicate ran, and
+              -- appeared only on a 2D surface plot, which has no z to prune
+              -- with. It is a planner-order accident either way, so the fix
+              -- is to stop handing GEOS a solid at all.
+              --
+              -- A corridor's plan footprint IS its centreline swept by
+              -- radius_m, so ST_DWithin over geography is not an
+              -- approximation of the envelope -- it is the same region,
+              -- measured in metres on the ellipsoid rather than in degrees.
+              -- The && prefilter is the cheap bbox pass the 2-D index can
+              -- serve, exactly as topologySql does above.
+              WHERE ST_Force2D(ut.geom_3d)
+                    && ST_Expand(ST_Force2D(s.geom_3d), ${TOPOLOGY_PAD_DEG})
+                AND ST_DWithin(ST_Force2D(ut.geom_3d)::geography,
+                               ST_Force2D(s.geom_3d)::geography, ut.radius_m)
+                AND (s.z_min IS NULL
+                     OR (es.z_min <= s.z_max AND s.z_min <= es.z_max))), '[]'::json)
+  ) AS doc`,
+    params: f.params,
+  };
+}
+
+/**
+ * The LADM document for one spatial unit, from PostGIS or the snapshot.
+ *
+ * Returns null for an identifier this project does not register, which the
+ * route turns into a 404 -- distinct from a throw, which would mean the
+ * backend could not answer at all.
+ *
+ * NOTES ON TWO OF THE SUBQUERIES ABOVE, because both look over-specified and
+ * are not:
+ *
+ * `ba_unit` selects the bundle this unit is the PRINCIPAL member of. A spatial
+ * unit can be a member of many bundles -- one plot carries an undivided share
+ * for every flat above it -- so matching on membership alone would hand a
+ * plot back the first of eighty administrative records, arbitrarily.
+ *
+ * `easements` is resolved PER REQUEST, not stored. Which plots a corridor
+ * burdens is a spatial question, and a projection of it would be stale the
+ * moment a run moved. The test is 2D intersection AND z-range overlap, which
+ * is exact for these prisms -- the same fallback solids_intersect() uses when
+ * SFCGAL is absent, used unconditionally here so the answer does not depend on
+ * which PostGIS image is running. A 2D unit has no z to overlap, so every run
+ * crossing a surface plot qualifies, which is the correct answer for a plot:
+ * the whole column beneath it is burdened.
+ */
+export async function getLadmDoc(
+  slug: string, suId: string,
+): Promise<LADMParcelDoc | null> {
+  let raw: LadmRaw | null = null;
+
+  const r = await viaDb(slug, async (scope) => {
+    const { sql, params } = ladmSql(scope, suId);
+    const rows = await q<{ doc: LadmRaw }>(sql, params);
+    return rows.length ? rows[0].doc : EMPTY_LADM;
+  });
+  if (r.ok) {
+    raw = r.value;
+  } else {
+    // The snapshot half. A project exported before LADM existed simply has no
+    // ladm.json, which is not an error: it has no LADM document to serve, and
+    // the panel says so rather than rendering an empty card.
+    try {
+      const all = await snapshot<Record<string, LadmRaw>>(slug, 'ladm.json');
+      raw = all[suId] ?? EMPTY_LADM;
+    } catch {
+      return null;
+    }
+  }
+  if (!raw?.su) return null;
+
+  const project = await findProject(slug);
+  const sep = project?.geoid_sep_m ?? null;
+
+  const su: LADMSpatialUnit = {
+    su_id: raw.su.su_id,
+    su_type: raw.su.su_type,
+    dimension: raw.su.dimension,
+    source_kind: raw.su.source_kind,
+    source_id: raw.su.source_id,
+    provenance: raw.su.provenance,
+  };
+  if (raw.su.z_min !== null && raw.su.z_max !== null) {
+    su.height = heightRange(raw.su.z_min, raw.su.z_max, sep);
+  }
+  if (raw.su.volume_m3 !== null) su.volume_m3 = raw.su.volume_m3;
+  if (raw.su.ring) su.ring = raw.su.ring;
+  if (raw.su.label) su.label = raw.su.label;
+
+  const rrrs: LADMRRR[] = raw.rrrs.map((row) => {
+    const out: LADMRRR = { rrr_class: row.rrr_class, rrr_type: row.rrr_type };
+    out.rrr_id = row.rrr_id;
+    if (row.share_den !== 1 || row.share_num !== 1) {
+      out.share = { num: row.share_num, den: row.share_den };
+    }
+    if (row.party) out.party = row.party;
+    if (row.time_spec_from) out.from = row.time_spec_from;
+    if (row.time_spec_to) out.to = row.time_spec_to;
+    if (row.amount_inr !== null) out.amount_inr = row.amount_inr;
+    if (row.reference) out.reference = row.reference;
+    if (row.description) out.description = row.description;
+    return out;
+  });
+
+  let baUnit: LADMBAUnit | undefined;
+  if (raw.ba_unit) {
+    baUnit = {
+      ba_unit_id: raw.ba_unit.ba_unit_id,
+      ba_ulpin: raw.ba_unit.ba_ulpin,
+      name: raw.ba_unit.name,
+      ba_type: raw.ba_unit.ba_type,
+      members: raw.ba_unit.members.map((m) => ({
+        su_id: m.su_id,
+        member_role: m.member_role,
+        share: { num: m.share_num, den: m.share_den },
+        su_type: m.su_type,
+        ...(m.label ? { label: m.label } : {}),
+      })),
+    };
+    if (raw.ba_unit.ulpin_14) baUnit.ulpin_14 = raw.ba_unit.ulpin_14;
+  }
+
+  // ---- the register, layered on ------------------------------------------
+  // Only a `unit` has one, and only where the project ships a register file.
+  // Everything below is ADDITIVE: nothing read from the cadastre is replaced,
+  // so a project without a register serves exactly the document above.
+  if (raw.su.source_kind === 'unit') {
+    const register = await flatRegister(slug);
+    const entry = register[raw.su.su_id];
+    if (entry) {
+      rrrs.push(...rrrFromRegister(entry));
+
+      // The parking bay appurtenant to this flat. THE ALLOCATION IS A
+      // REGISTER FACT: a bay carries no owner, because it is not separately
+      // titled, so there is nothing in the cadastre to join on. See the
+      // comment on FlatRegisterEntry.parking_ulpin.
+      const bay = entry.parking_ulpin;
+      if (baUnit && bay && !baUnit.members.some((m) => m.su_id === bay)) {
+        baUnit.members.push({
+          su_id: bay,
+          member_role: 'appurtenant',
+          share: { num: 1, den: 1 },
+          su_type: 'multi_storey',
+          ...(entry.parking_label ? { label: entry.parking_label } : {}),
+        });
+      }
+    }
+  }
+
+  // Every distinct party named by any right on this holding. Deduplicated by
+  // name and role -- the same key la_party is unique on -- so a bank that
+  // appears on both a cadastral encumbrance and a register charge is one
+  // stakeholder rather than two.
+  const parties: LADMParty[] = [];
+  const seen = new Set<string>();
+  for (const row of rrrs) {
+    if (!row.party) continue;
+    const key = `${row.party.name} ${row.party.role}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    parties.push(row.party);
+  }
+
+  const easements: LADMSpatialUnit[] = raw.easements.map((e) => {
+    const out: LADMSpatialUnit = {
+      su_id: e.su_id,
+      su_type: 'subterranean',
+      dimension: '3D',
+      source_kind: 'utility',
+      provenance: 'estimated',
+    };
+    if (e.z_min !== null && e.z_max !== null) {
+      out.height = heightRange(e.z_min, e.z_max, sep);
+    }
+    const label = e.label ?? (e.asset_type ? `${e.asset_type} corridor` : null);
+    if (label) out.label = e.authority ? `${label} · ${e.authority}` : label;
+    return out;
+  });
+
+  return {
+    su,
+    ...(baUnit ? { ba_unit: baUnit } : {}),
+    rrrs,
+    parties,
+    easements,
+    project: { slug, name: project?.name ?? slug },
+    disclaimer: DISCLAIMER,
+    issued_at: new Date().toISOString(),
+  };
 }

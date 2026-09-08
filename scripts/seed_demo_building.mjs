@@ -812,6 +812,43 @@ pushVolume({
   tenure: 'Common area',
 });
 
+// ---- which bay belongs to which flat --------------------------------------
+// THE ALLOCATION IS A REGISTER FACT, NOT A CADASTRAL ONE, and it goes in the
+// register file for exactly that reason.
+//
+// A parking bay still carries no owner -- see the comment above pushVolume,
+// which is unchanged and still right. Who may park in P-213 is not a property
+// of the concrete; it is a term of the flat's title, sitting beside the deed
+// number and the charge, in the record that already holds those. Writing an
+// owner onto the bay instead would make the cadastre claim a bay is
+// separately titled, which is the one thing it is not.
+//
+// This is what binds Flat 901, its bay and its undivided share of the ground
+// into ONE administrative record: lib/ladm.ts reads `parking_ulpin` and adds
+// the bay to the LA_BAUnit as an `appurtenant` member. Because it lives in
+// the register, it works identically on PostGIS and on the snapshot.
+//
+// THERE ARE 40 BAYS AND 80 FLATS, and that asymmetry is kept rather than
+// smoothed away: half the tower has a bay and half does not, so the panel has
+// to render both cases. Allocation is in flat order, lowest floor first,
+// which is both deterministic and the order a builder actually sells in.
+{
+  const bays = units
+    .filter((u) => u.kind === 'parking')
+    .sort((a, b) => b.level_no - a.level_no || a.unit_no.localeCompare(b.unit_no));
+  const flats = units
+    .filter((u) => u.kind === undefined || u.kind === 'flat')
+    .sort((a, b) => a.level_no - b.level_no || a.unit_no.localeCompare(b.unit_no));
+  flats.forEach((flat, i) => {
+    const bay = bays[i];
+    if (!bay) return;
+    const entry = flatRegister[flat.ulpin];
+    if (!entry) return;
+    entry.parking_ulpin = bay.ulpin;
+    entry.parking_label = bay.label;
+  });
+}
+
 detail[String(BUILDING_ID)] = {
   building: {
     ...newBuilding.properties,

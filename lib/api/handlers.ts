@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { callerTagFromCtx } from '@/lib/http/caller-tag';
 import {
-  backend, getBuildingDetail, getBuildings, getParcels,
+  backend, getBuildingDetail, getBuildings, getLadmDoc, getParcels,
   getRoads, getSurveyParcelDetail, getSurveyParcels, getTopology, getUtilities,
 } from '@/lib/db';
 import { applyEdit, editsRev } from '@/lib/data/edits';
 import { coerceEdit, validateEdit, warningsFor } from '@/lib/data/building-schema';
-import { resolveProject, unavailableMessage } from '@/lib/projects';
+import { listProjects, resolveProject, unavailableMessage } from '@/lib/projects';
+import { CRS_2D, codesOfSuId, jsonLd } from '@/lib/ladm';
+import type { LADMParcelDoc } from '@/lib/ladm';
 import { jsonPayload } from '@/lib/http/payload';
 import { warmProject } from '@/lib/server-cache';
 import {
@@ -14,7 +16,7 @@ import {
 } from '@/lib/cache/store';
 import {
   callerContext, enforceBuildingAccess, enforceProjectAccess,
-  filterDetailForCaller, refuseMutation,
+  filterDetailForCaller, filterLadmForCaller, ownsSpatialUnit, refuseMutation,
 } from '@/lib/auth/access';
 import type { GeoFC } from '@/lib/types';
 
@@ -881,4 +883,165 @@ export async function topologyRoute(slug: string, req: Request) {
   } catch (err) {
     return errorResponse('failed to run topology validation', err);
   }
+}
+
+/**
+ * GET /api/p/<slug>/ladm/spatial-unit/<suId>
+ * GET /api/v1/ladm/parcel/<ulpin3d>       (same body, project resolved from the id)
+ *
+ * The ISO 19152 document for one spatial unit: LA_SpatialUnit, the LA_BAUnit
+ * it belongs to with every member and its share, the LA_RRRs against that
+ * bundle, the LA_Parties who hold them, and the subterranean easements that
+ * cross it.
+ *
+ * TWO REPRESENTATIONS, one document. GeoJSON-3D by default -- a Feature whose
+ * geometry is the plan ring and whose properties carry the LADM classes --
+ * and JSON-LD on `?format=jsonld` or an `Accept: application/ld+json`. The
+ * framing lives in lib/ladm.ts rather than here so it is testable without a
+ * server and so the ISO class names appear exactly once.
+ *
+ * NO ZOD. The identifier IS the input, and lib/ulpin.ts's grammar is already
+ * its validator -- codesOfSuId() rejects anything that is not shaped like one
+ * of ours before a query is built.
+ */
+export async function ladmSpatialUnitRoute(
+  slug: string, rawSuId: string, req: Request,
+): Promise<NextResponse> {
+  const suId = decodeURIComponent(rawSuId).trim().toUpperCase();
+  if (!codesOfSuId(suId)) {
+    return NextResponse.json(
+      {
+        error: 'not a spatial unit identifier',
+        detail: 'Expected <state>-<district>-<scheme>-... , e.g. '
+          + 'AP-VSP-3D26-9999-001-09-901 or AP-VSP-3D26-UTL-00042.',
+      },
+      { status: 400 },
+    );
+  }
+  const gate = await gateProject(slug);
+  if (gate) return gate;
+  const ctx = await callerContext(req);
+  const projectGuard = enforceProjectAccess(ctx, slug);
+  if (projectGuard) return projectGuard;
+
+  try {
+    const doc = await getLadmDoc(slug, suId);
+    if (!doc) {
+      return NextResponse.json(
+        { error: 'spatial unit not registered', su_id: suId },
+        { status: 404, headers: await baseHeaders(slug) },
+      );
+    }
+
+    /*
+     * THE REDACTION HAPPENS HERE, ON THE SERVER, before the body is built --
+     * not in the viewer, where anyone can read the response in devtools. This
+     * is the payload that carries holder names, charges and tenure, which is
+     * exactly what filterDetailForCaller strips from the building document;
+     * serving it unfiltered would hand back through a second door what the
+     * first one refuses.
+     */
+    const body = filterLadmForCaller(ctx, doc, ownsSpatialUnit(ctx, suId));
+
+    const url = new URL(req.url);
+    const wantsLd = url.searchParams.get('format') === 'jsonld'
+      || (req.headers.get('accept') ?? '').includes('application/ld+json');
+
+    const headers = await baseHeaders(slug);
+    headers['content-type'] = wantsLd
+      ? 'application/ld+json; charset=utf-8'
+      : 'application/geo+json; charset=utf-8';
+
+    const payload: unknown = wantsLd ? jsonLd(body) : geoJsonOf(body);
+
+    return await jsonPayload(req, payload, {
+      resource: `${slug}:ladm:${suId}:${wantsLd ? 'ld' : 'geo'}`,
+      rev: String(editsRev(slug)),
+      headers,
+      // NOT OPTIONAL. lib/http/caller-tag.ts documents the cross-citizen
+      // cache-poisoning leak that follows from omitting it, and this response
+      // differs by role in exactly the way that bug exploits.
+      callerTag: callerTagFromCtx(ctx),
+    });
+  } catch (err) {
+    return errorResponse('failed to load the LADM document', err);
+  }
+}
+
+/**
+ * The document as a GeoJSON-3D Feature.
+ *
+ * `geometry` is the PLAN ring, and the vertical extent rides in the
+ * properties rather than in the coordinates. That is deliberate: a GeoJSON
+ * consumer that reads a position's third element treats it as an ELLIPSOIDAL
+ * height, and every z stored here is orthometric. Publishing z inside the
+ * coordinates would silently mislabel it by the geoid separation -- 72 m at
+ * Visakhapatnam -- with nothing downstream able to detect the error. The
+ * `height` block states both datums and names each one's CRS.
+ */
+function geoJsonOf(doc: LADMParcelDoc): Record<string, unknown> {
+  const { su, ...rest } = doc;
+  const { ring, ...suProps } = su;
+  return {
+    type: 'Feature',
+    id: su.su_id,
+    // The 2D CRS of the ring below. GeoJSON is CRS84 by definition; naming it
+    // costs nothing and stops a reader guessing which of the three CRS on
+    // this document the coordinates are in.
+    crs: CRS_2D,
+    geometry: ring ?? null,
+    properties: {
+      '@class': 'LA_SpatialUnit',
+      spatial_unit: suProps,
+      ...rest,
+    },
+  };
+}
+
+/**
+ * GET /api/v1/ladm/parcel/<ulpin3d> -- the slug-free public form.
+ *
+ * The project is resolved FROM THE IDENTIFIER: an su_id carries the revenue
+ * codes (state, district, scheme) that projects.state_code / district_code /
+ * scheme_code hold, so the AOI is derivable rather than something the caller
+ * has to know. That is what makes a versioned, slug-free namespace coherent
+ * here, and it is the URL the exported certificate's QR code resolves to --
+ * a deed that outlives the session that produced it must not carry a slug
+ * that could be renamed.
+ *
+ * listProjects() reads the committed registry on the snapshot path and
+ * PostGIS on the other, so this resolves with the database down.
+ */
+export async function ladmByIdentifierRoute(
+  rawSuId: string, req: Request,
+): Promise<NextResponse> {
+  const suId = decodeURIComponent(rawSuId).trim().toUpperCase();
+  const codes = codesOfSuId(suId);
+  if (!codes) {
+    return NextResponse.json(
+      {
+        error: 'not a spatial unit identifier',
+        detail: 'Expected <state>-<district>-<scheme>-... , e.g. '
+          + 'AP-VSP-3D26-9999-001-09-901.',
+      },
+      { status: 400 },
+    );
+  }
+  const projects = await listProjects();
+  const match = projects.find((p) => p.state_code === codes.state
+    && p.district_code === codes.district
+    && p.scheme_code === codes.scheme);
+  if (!match) {
+    return NextResponse.json(
+      {
+        error: 'no project issues this identifier',
+        codes,
+        detail: `No registered project has state_code "${codes.state}", `
+          + `district_code "${codes.district}" and scheme_code "${codes.scheme}". `
+          + 'GET /api/projects lists the projects that do exist.',
+      },
+      { status: 404 },
+    );
+  }
+  return ladmSpatialUnitRoute(match.slug, suId, req);
 }

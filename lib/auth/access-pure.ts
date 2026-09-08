@@ -14,6 +14,7 @@
  * session from the Next-managed cookie jar, which is a runtime
  * concern, not a rules concern.
  */
+import { parse } from '../ulpin.ts';
 
 export type CallerContext =
   | { kind: 'gov' }
@@ -137,4 +138,89 @@ export function filterDetailForCaller<
       return redacted as unknown as UnitLike;
     }),
   };
+}
+
+/**
+ * Is this spatial unit the citizen's own flat?
+ *
+ * Answered from the IDENTIFIER, because a LADM document is addressed by
+ * su_id and does not carry the (level, unit code) pair `ownsUnit` matches on.
+ * For a unit-sourced spatial unit the su_id IS the ULPIN, so its floor code
+ * and unit slot are exactly the two things the session claims hold.
+ *
+ * FALSE FOR EVERY OTHER KIND, deliberately. A citizen does not "own" the
+ * surface plot, the utility corridor or the survey parcel their flat sits on
+ * -- they hold an undivided share of the first and nothing at all in the
+ * others -- so those documents are narrowed for them like anyone else's. The
+ * share itself is still visible: it is a member of THEIR bundle, and they
+ * reach it through their own flat's document.
+ */
+export function ownsSpatialUnit(ctx: CallerContext, suId: string): boolean {
+  if (ctx.kind !== 'citizen') return true;
+  const parts = parse(suId, 'any');
+  if (!parts || parts.floor === undefined || parts.unitSlot === undefined) return false;
+  return parts.floor === ctx.floor && parts.unitSlot === ctx.unit;
+}
+
+/** The parts of a LADM document this module narrows. Structural only. */
+interface LadmLike {
+  su: unknown;
+  ba_unit?: unknown;
+  rrrs: unknown[];
+  parties: unknown[];
+  easements: unknown[];
+  restricted?: boolean;
+  redaction_note?: string;
+}
+
+/**
+ * Narrow a LADM document to what the caller may see.
+ *
+ * THIS IS THE MOST SENSITIVE PAYLOAD THE APPLICATION SERVES. Everything
+ * `filterDetailForCaller` above exists to strip -- the holder's name, the
+ * tenure, the charge, the identifier -- is precisely what LA_Party and LA_RRR
+ * are FOR. Serving this document unfiltered would hand back, in a tidier
+ * shape, exactly what the building endpoint refuses.
+ *
+ *   gov               everything
+ *   citizen, own flat everything
+ *   citizen, other    the spatial unit and the easements over it
+ *   anon              the spatial unit and the easements over it
+ *
+ * THE SPATIAL UNIT SURVIVES because it is the shape of a volume and its place
+ * in space, which the viewer already draws on screen for anyone -- withholding
+ * the m³ of a box a user is looking at would be theatre, not privacy.
+ *
+ * THE EASEMENTS SURVIVE for the same reason and one more: they name utility
+ * OPERATORS, never people, and /api/utilities already serves the same runs to
+ * anyone who asks. Stripping them here would not protect a person; it would
+ * only make the two endpoints disagree.
+ *
+ * WHAT GOES IS EVERY LINK TO A PERSON: the bundle (which says which other
+ * assets one holder controls), the rights, and the parties themselves.
+ *
+ * `restricted` is set rather than the fields merely being absent, so the
+ * viewer can print "not yours to read" instead of rendering an empty card
+ * that reads as "nothing is registered here" -- the same distinction
+ * UnitInfo.restricted draws, and the same one lib/deed/certificate.ts refuses
+ * to export across.
+ */
+export function filterLadmForCaller<T extends LadmLike>(
+  ctx: CallerContext, doc: T, owns: boolean,
+): T {
+  if (ctx.kind === 'gov') return doc;
+  if (ctx.kind === 'citizen' && owns) return doc;
+  const narrowed: LadmLike = {
+    su: doc.su,
+    rrrs: [],
+    parties: [],
+    easements: doc.easements,
+    restricted: true,
+    redaction_note: ctx.kind === 'anon'
+      ? 'Rights and parties are not served to unauthenticated callers. '
+        + 'The spatial unit and the easements over it are public.'
+      : 'This volume is not yours to read. Sign in as its holder, or as a '
+        + 'government user, to see its rights and parties.',
+  };
+  return narrowed as T;
 }

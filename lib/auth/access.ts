@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { currentSession } from './guards';
 import {
   checkBuildingAccess, checkMutation, checkProjectAccess,
-  filterDetailForCaller, isMutator, ownsUnit, type CallerContext,
+  filterDetailForCaller, filterLadmForCaller, isMutator, ownsSpatialUnit,
+  ownsUnit, type CallerContext,
 } from './access-pure';
 
 /**
@@ -45,6 +46,11 @@ export async function callerContext(req: Request): Promise<CallerContext> {
 
 /** True when this caller may write to the cadastre. */
 export { isMutator, ownsUnit, filterDetailForCaller };
+// The LADM half of the same rules. Re-exported here rather than imported from
+// access-pure.ts at the call sites, so a handler has ONE module to reach for
+// and cannot pick up the pure version of one rule and the wrapped version of
+// another.
+export { ownsSpatialUnit, filterLadmForCaller };
 
 function toResponse(refusal: { status: number; body: unknown }): NextResponse {
   return NextResponse.json(refusal.body, { status: refusal.status });

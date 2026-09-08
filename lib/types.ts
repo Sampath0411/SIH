@@ -325,6 +325,25 @@ export interface FlatRegisterEntry {
   mortgage?: MortgageInfo;
   tax?: TaxInfo;
   bills?: BillInfo[];
+  /**
+   * The parking bay appurtenant to this flat, by ULPIN.
+   *
+   * HERE RATHER THAN ON THE BAY. A bay carries no owner -- it is not
+   * separately titled, and writing one onto the cadastre row would claim it
+   * is. Who may park in P-213 is a term of the FLAT's title, which is what
+   * this file records, alongside the deed number and the charge.
+   *
+   * lib/ladm.ts reads it to add the bay to the flat's LA_BAUnit as an
+   * `appurtenant` member, which is what makes a flat, its bay and its
+   * undivided share of the ground one administrative record rather than
+   * three rows that happen to share a name.
+   *
+   * Optional twice over: only the demo tower has a register at all, and only
+   * half its flats have a bay -- there are 40 bays and 80 flats.
+   */
+  parking_ulpin?: string;
+  /** 'Parking Slot P-213'. The label the bay is known by on screen. */
+  parking_label?: string;
 }
 
 export interface BuildingDetail {
