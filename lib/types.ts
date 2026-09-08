@@ -1,5 +1,9 @@
 // Shared domain types. Names follow the LADM-inspired schema in db/01_schema.sql.
 
+import type { UnitKind } from './ulpin.ts';
+
+export type { UnitKind };
+
 /** How a value was arrived at. Surfaced on every entity in the DetailPanel --
  *  telling surveyed fact from estimate is the point of the system. */
 export type Provenance = 'osm_tag' | 'estimated' | 'dsm_dem' | 'surveyed_plan';
@@ -191,6 +195,30 @@ export interface UnitInfo {
   z_min: number;
   z_max: number;
   ring: Ring;
+  /**
+   * WHAT this volume is: a flat, a parking bay, a shop, an atrium, a lift
+   * shaft. Decides the colour it is drawn in and how the panel titles and
+   * describes it -- a staircase core has no owner, no tenure and no tax
+   * demand, and printing those rows as "not on record" against it would be
+   * the same failure the nullable `owner` above exists to avoid.
+   *
+   * Optional for the same reason as `ground_source`: a snapshot exported
+   * before the column existed lacks it. Treat absent as 'flat', which is what
+   * every unit in such a snapshot is.
+   */
+  kind?: UnitKind;
+  /**
+   * Groups the per-level segments of one vertical core.
+   *
+   * A lift shaft is stored as one unit per level it passes through, because
+   * `floor_id` is NOT NULL and the exploded stack and section cut are both
+   * per-level. This key is what lets the panel put them back together and
+   * report the span -- 'Central Elevator Shaft, B2 to level 20' -- rather than
+   * describing twenty-three unrelated boxes.
+   */
+  core_ref?: string;
+  /** Display name: 'Slot P-101', 'Anchor Store'. `unit_no` stays the code. */
+  label?: string;
   /**
    * Set on a flat the caller may see but may not inspect.
    *
@@ -493,6 +521,17 @@ export interface Project {
   elev_source?: ElevSource;
   /** Vertical datum of ground_elev: 'msl_egm96', or null for placeholders. */
   elev_datum?: string | null;
+  /**
+   * EGM96 geoid height above the WGS84 ellipsoid at the bbox centre, metres.
+   *
+   * Negative where the geoid sits below the ellipsoid -- about -65 m at
+   * Visakhapatnam. Every z this API serves is orthometric (see `elev_datum`);
+   * Cesium World Terrain is ellipsoidal. This is the one number that converts
+   * between them. Absent or null means NOT KNOWN, and consumers must leave the
+   * height alone rather than treating it as zero, which would assert that the
+   * two datums coincide. See lib/geo/datum.ts.
+   */
+  geoid_sep_m?: number | null;
   /** Optional ISRO Bhuvan overlays. Null/absent: no "Context (ISRO)" group. */
   bhuvan_layers?: BhuvanLayers | null;
 }

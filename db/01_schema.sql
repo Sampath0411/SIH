@@ -74,6 +74,10 @@ CREATE TABLE projects (
   elev_source   text NOT NULL DEFAULT 'placeholder'
                 CHECK (elev_source IN ('cartodem_v3','placeholder')),
   elev_datum    text,
+  -- EGM96 geoid height above the WGS84 ellipsoid at the bbox centre, metres
+  -- (about -65 m at Visakhapatnam). NULL means not known, never zero. See
+  -- migration 006 and scripts/dem.py.
+  geoid_sep_m   double precision,
   -- Optional ISRO Bhuvan WMS overlays: {"lulc": ..., "flood": ..., "cyclone": ...}
   -- layer names. NULL means the viewer offers no "Context (ISRO)" group.
   bhuvan_layers jsonb
@@ -242,6 +246,20 @@ CREATE TABLE unit (
   built_m2    double precision NOT NULL,
   tenure      text NOT NULL,               -- Freehold / Leasehold / Rented / Co-operative
   encumbrance text NOT NULL DEFAULT 'None',
+  -- WHAT this volume is. A level holds more than flats: parking bays below
+  -- grade, shops and an atrium on a commercial ground floor, and the lift and
+  -- stair cores running the height of the building. They are all the same
+  -- shape to this table -- a solid bounded by a level -- and differ only in
+  -- what they are, which is what this column records. See migration 006.
+  kind        text NOT NULL DEFAULT 'flat'
+              CHECK (kind IN ('flat','retail','anchor','parking',
+                              'circulation','atrium','elevator','stair','plant')),
+  -- Groups the per-level segments of one vertical core. A lift shaft is one
+  -- row per level it passes through, sharing this key, because floor_id is
+  -- NOT NULL and the viewer's explode and section are both per-level.
+  core_ref    text,
+  -- Display name: 'Slot P-101', 'Anchor Store'. unit_no stays the short code.
+  label       text,
   -- Who holds the flat, where it is, which way it looks.
   --
   -- Nullable, unlike every column above, because only a surveyed building
@@ -259,13 +277,30 @@ CREATE TABLE unit (
 CREATE TABLE utility (
   id          integer PRIMARY KEY,
   project_id  integer NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  asset_type  text NOT NULL CHECK (asset_type IN ('water','sewer','power','metro')),
+  -- Widened by migration 004; a fresh volume must start where that left off,
+  -- or seeding a telecom/drainage/foundation run fails the CHECK.
+  asset_type  text NOT NULL CHECK (asset_type IN ('water','sewer','power','metro',
+                                                  'telecom','drainage','foundation')),
   geom_3d     geometry(LineStringZ, 4326) NOT NULL,  -- centreline, drawn as a PolylineVolume
   envelope_3d geometry(PolyhedralSurfaceZ, 4326),    -- solid corridor, used for 3D conflict tests
   depth_m     double precision NOT NULL,             -- negative = below ground
   radius_m    double precision NOT NULL,
   authority   text NOT NULL,
-  status      text NOT NULL DEFAULT 'operational'
+  status      text NOT NULL DEFAULT 'operational',
+  -- Set on a run that serves ONE building rather than a street: the demo
+  -- tower's riser, its sewer lateral and its tank. Read by
+  -- lib/underground/layout.ts to hang the run off that building's ground, and
+  -- by topology validation to tell a building's own plumbing from a trespass.
+  building_id integer REFERENCES building(id) ON DELETE CASCADE,
+  -- Added by migration 004. Every one is optional: a run whose material was
+  -- never surveyed shows no material row rather than a plausible one.
+  ref            text,
+  diameter_mm    double precision,
+  material       text,
+  connected_area text,
+  installed_on   date,
+  provenance     text NOT NULL DEFAULT 'estimated'
+                 CHECK (provenance IN ('demonstration','estimated','surveyed'))
 );
 
 -- ---------------------------------------------------------------- conflict
@@ -294,5 +329,8 @@ CREATE INDEX floor_geom_gix     ON floor    USING gist (geom);
 CREATE INDEX floor_building_ix  ON floor    (building_id);
 CREATE INDEX unit_geom_gix      ON unit     USING gist (geom_3d);
 CREATE INDEX unit_floor_ix      ON unit     (floor_id);
+CREATE INDEX unit_kind_ix       ON unit     (kind);
+CREATE INDEX unit_core_ix       ON unit     (core_ref) WHERE core_ref IS NOT NULL;
 CREATE INDEX utility_geom_gix   ON utility  USING gist (geom_3d);
 CREATE INDEX utility_env_gix    ON utility  USING gist (envelope_3d);
+CREATE INDEX utility_building_ix ON utility (building_id) WHERE building_id IS NOT NULL;

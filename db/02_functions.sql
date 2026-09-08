@@ -144,3 +144,53 @@ BEGIN
          AND az0 <= bz1 AND bz0 <= az1;
 END
 $fn$;
+
+
+-- ---------------------------------------------------------------------------
+-- ULPIN with a TYPED unit slot.
+--
+-- ulpin_fmt() above takes an integer unit and pads it to two digits, which is
+-- right for a flat and cannot express anything else. A level holds more than
+-- flats -- parking bays, shops, an atrium, the lift and stair cores -- and the
+-- slot says which by carrying a prefix: 'R01' a retail bay, 'P101' a parking
+-- slot, 'C01' common space, 'EV' a lift shaft, 'ST' a staircase.
+--
+-- A SEPARATE FUNCTION, not a widened ulpin_fmt(). Every identifier already
+-- minted came out of the four-argument form, and changing that signature again
+-- would repeat the overload breakage the DROP above exists to prevent. This
+-- one delegates to it for the prefix, so the two cannot drift.
+--
+-- Mirrors generate() + unitSlot() in lib/ulpin.ts; lib/ulpin.test.ts asserts
+-- the pair against fixed expectations.
+CREATE OR REPLACE FUNCTION ulpin_fmt_slot(p int, b int, f int, uslot text,
+                                          st text DEFAULT 'AP',
+                                          di text DEFAULT 'VSP',
+                                          sc text DEFAULT '3D26')
+RETURNS text
+LANGUAGE sql IMMUTABLE AS $fn$
+  SELECT CASE
+    WHEN b IS NULL OR f IS NULL OR uslot IS NULL
+      THEN ulpin_fmt(p, b, f, NULL, st, di, sc)
+    ELSE ulpin_fmt(p, b, f, NULL, st, di, sc) || '-' || upper(uslot)
+  END;
+$fn$;
+
+
+-- The slot a kind writes, e.g. ('retail', 1) -> 'R01', ('elevator', NULL) -> 'EV'.
+-- Ordinals below 100 are padded to two digits; above that they are left alone,
+-- so a flat numbered 2004 stays '2004' rather than being truncated by lpad().
+CREATE OR REPLACE FUNCTION unit_slot(kind text, ordinal int DEFAULT NULL)
+RETURNS text
+LANGUAGE sql IMMUTABLE AS $fn$
+  SELECT CASE kind
+           WHEN 'flat' THEN ''
+           WHEN 'retail' THEN 'R'  WHEN 'anchor' THEN 'R'
+           WHEN 'parking' THEN 'P'
+           WHEN 'circulation' THEN 'C' WHEN 'atrium' THEN 'C'
+           WHEN 'elevator' THEN 'EV' WHEN 'stair' THEN 'ST'
+           WHEN 'plant' THEN 'PL'
+         END
+      || CASE WHEN ordinal IS NULL THEN ''
+              WHEN ordinal < 100 THEN lpad(ordinal::text, 2, '0')
+              ELSE ordinal::text END;
+$fn$;
