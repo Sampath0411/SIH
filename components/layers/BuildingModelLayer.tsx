@@ -225,7 +225,11 @@ export default function BuildingModelLayer() {
     // The facade sits WALL_OUTSET_M outside the storey block so the two
     // surfaces never z-fight; the block itself is a plain wall tone.
     const facadeRing = outsetRing(ring, WALL_OUTSET_M);
+    // CLOSED. flatLonLat drops a ring's closing vertex (a PolygonHierarchy
+    // must not repeat it), but a wall is a run of segments, and without the
+    // repeat the last side of the building had no facade at all.
     const facadeFlat = flatLonLat(facadeRing);
+    facadeFlat.push(facadeFlat[0], facadeFlat[1]);
     const facadePositions = Cesium.Cartesian3.fromDegreesArray(facadeFlat);
     const facadeCount = facadeFlat.length / 2;
     const blockMaterial = new Cesium.ColorMaterialProperty(MATERIALS.buildingModelWall);
