@@ -245,6 +245,9 @@ export default function UnitsLayer() {
     const labelTextFor = (u: UnitInfo): string | null => {
       const kind = u.kind ?? 'flat';
       if (u.core_ref) return null;
+      // A neighbour's flat or bay, served as a shape with no code: nothing to
+      // write on it, and writing 'undefined' would be worse than nothing.
+      if (u.restricted || !u.unit_no) return null;
       switch (kind) {
         case 'flat': return u.unit_no;
         // The number painted on the bay: '105', not 'P-105'. The prefix is
@@ -269,7 +272,9 @@ export default function UnitsLayer() {
     for (const f of floors) {
       const onFloor = detail.units
         .filter((u) => u.level_no === f.level_no)
-        .sort((a, b) => a.unit_no.localeCompare(b.unit_no, 'en'));
+        // A citizen's neighbours arrive with no code; they sort as one
+        // group, and their tint is 'not mine' regardless of slot.
+        .sort((a, b) => (a.unit_no ?? '').localeCompare(b.unit_no ?? '', 'en'));
       onFloor.forEach((u, i) => slotOf.set(u.id, i));
     }
 

@@ -55,40 +55,10 @@ export default function FloorLadder({
     return `Level ${levelLabel(level, top)} · ${what}${depth}`;
   };
 
-  // A citizen is served one floor -- theirs -- and the ladder says so rather
-  // than pretending to be a control with one setting. Not a button: there is
-  // nothing else to go to, and "all" would show them a stack they were not
-  // served.
-  if (citizen) {
-    const f = floors[0];
-    return (
-      <div
-        data-panel="floors"
-        className={[
-          'glass pointer-events-auto rounded-lg p-1.5',
-          horizontal ? 'flex items-center gap-2' : '',
-        ].join(' ')}
-      >
-        <div
-          className={[
-            'text-[9px] uppercase tracking-widest text-[rgb(var(--muted))]',
-            horizontal ? 'shrink-0 pl-1' : 'px-1 pb-1 text-center',
-          ].join(' ')}
-        >
-          Your floor
-        </div>
-        <div
-          title={tooltipFor(f.level_no)}
-          className={[
-            'is-active grid shrink-0 place-items-center rounded text-[11px] font-medium',
-            horizontal ? 'h-9 w-11' : 'h-6 w-9',
-          ].join(' ')}
-        >
-          {levelLabel(f.level_no, top)}
-        </div>
-      </div>
-    );
-  }
+  // A citizen walks every level of their building; only the register behind
+  // the neighbours' doors is withheld, and that is the server's job, not the
+  // ladder's. Their own floor is marked so it can be found again.
+  const ownLevel = citizen ? useViewStore.getState().session.floor : null;
 
   return (
     <div
@@ -120,7 +90,9 @@ export default function FloorLadder({
             <button
               key={f.id}
               type="button"
-              title={tooltipFor(f.level_no)}
+              title={f.level_no === ownLevel
+                ? `Your floor · ${tooltipFor(f.level_no)}`
+                : tooltipFor(f.level_no)}
               aria-label={`Level ${levelLabel(f.level_no, top)}`}
               aria-pressed={active}
               onClick={() => isolateFloor(active ? null : f.level_no)}
@@ -137,6 +109,9 @@ export default function FloorLadder({
               ].join(' ')}
             >
               {levelLabel(f.level_no, top)}
+              {f.level_no === ownLevel && !active ? (
+                <span aria-hidden className="ml-0.5 text-[8px] align-top">●</span>
+              ) : null}
             </button>
           );
         })}

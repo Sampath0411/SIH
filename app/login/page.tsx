@@ -82,9 +82,9 @@ export default async function LoginPage({
             Citizen or government?
           </h1>
           <p className="mt-2 text-[12px] leading-relaxed text-muted">
-            A citizen sees their own flat, its parking bay and its certificate,
-            and nothing else in the building. A government official sees the
-            full AOI, with every control.
+            A citizen sees their own building and every floor of it, with the
+            record, parking bay and certificate of their own flat only. A
+            government official sees the full AOI, with every control.
           </p>
         </div>
         <LoginForm

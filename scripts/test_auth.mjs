@@ -384,20 +384,38 @@ await test('filterDetailForCaller: a citizen gets their flat, their floor, and n
   assert.ok(detail.units.length > 1, 'the demo tower must hold more than one flat');
 
   const mine = filterDetailForCaller(RAVI, detail);
-  // ONE floor -- theirs -- and it carries no identifier.
-  assert.equal(mine.floors.length, 1, `expected 1 floor, got ${mine.floors.length}`);
-  assert.equal(mine.floors[0].level_no, 2);
-  assert.equal(mine.floors[0].ulpin, undefined, 'the floor ULPIN is not theirs to read');
+  // EVERY floor -- the whole tower can be walked -- and none carries an
+  // identifier.
+  assert.equal(mine.floors.length, detail.floors.length);
+  assert.ok(mine.floors.every((f) => f.ulpin === undefined), 'no floor ULPIN for a citizen');
 
-  // ONE flat -- theirs -- with its register intact. (Without the register
-  // merged on there is no parking_ulpin, so no bay comes with it here; the
-  // next test covers the merged document.)
-  assert.equal(mine.units.length, 1, `expected 1 unit, got ${mine.units.length}`);
-  const own = mine.units[0];
+  // EVERY volume keeps its shape; exactly one is readable. (Without the
+  // register merged on there is no parking_ulpin, so no bay is readable
+  // here; the next test covers the merged document.)
+  assert.equal(mine.units.length, detail.units.length);
+  const readable = mine.units.filter((u) => !u.restricted);
+  assert.equal(readable.length, 1, `expected 1 readable unit, got ${readable.length}`);
+  const own = readable[0];
   assert.equal(own.unit_no, '201');
   assert.equal(own.owner, 'Ravi Kumar');
   assert.ok(own.ulpin, 'the citizen keeps their own ULPIN');
-  assert.equal(own.restricted, undefined);
+
+  // A neighbour's flat is a shape and a kind, and nothing else: not even
+  // its door number.
+  for (const u of mine.units.filter((x) => x.restricted)) {
+    assert.ok(u.ring && typeof u.level_no === 'number', 'geometry survives');
+    for (const field of ['ulpin', 'owner', 'address', 'carpet_m2', 'built_m2',
+      'tenure', 'encumbrance', 'facing', 'parking_ulpin']) {
+      assert.equal(u[field], undefined, `restricted volume must not carry ${field}`);
+    }
+    if (!['elevator', 'stair', 'circulation', 'plant'].includes(u.kind)) {
+      assert.equal(u.unit_no, undefined, 'a neighbour\'s code is withheld');
+      assert.equal(u.label, undefined);
+    }
+  }
+  // Fabric keeps its name -- there is nobody behind a lift shaft.
+  assert.ok(mine.units.some((u) => u.core_ref && u.label), 'cores keep their label');
+  assert.ok(!JSON.stringify(mine).includes('"unit_no":"202"'), 'no neighbour door number');
 
   // The building is named and drawable, and not identified.
   assert.equal(mine.building.name, 'Sampath Skyline');
@@ -420,8 +438,6 @@ await test('filterDetailForCaller: a citizen gets their flat, their floor, and n
     'Sampath Estates']) {
     assert.ok(!serialised.includes(name), `${name} must not appear`);
   }
-  // Nor any other level: the floor ladder must have exactly one rung to draw.
-  assert.ok(!serialised.includes('"level_no":5'), 'no other floor survives');
 });
 
 await test('stripCoreIdentity: fabric volumes carry no identifier for anyone', async () => {
@@ -482,11 +498,14 @@ await test('filterDetailForCaller: the flat register is redacted with the flat',
   const own = mine.units.find((u) => u.unit_no === '201');
   assert.ok(own.ownership, 'the citizen keeps their own ownership status');
   assert.ok(own.tax, 'and their own tax record');
-  // The bay their title allocates comes with the flat, and nothing else does.
+  // The bay their title allocates is readable with the flat; every other
+  // bay is a shape.
   assert.ok(own.parking_ulpin, 'every flat has a bay');
-  assert.equal(mine.units.length, 2, `flat + bay, got ${mine.units.length}`);
-  const bay = mine.units.find((u) => u.kind === 'parking');
+  const readable = mine.units.filter((u) => !u.restricted);
+  assert.equal(readable.length, 2, `flat + bay, got ${readable.length}`);
+  const bay = readable.find((u) => u.kind === 'parking');
   assert.equal(bay.ulpin, own.parking_ulpin);
+  assert.ok(mine.units.filter((u) => u.kind === 'parking' && u.restricted).length === 79);
   // No neighbour's loan account or assessment number anywhere in the payload.
   const serialised = JSON.stringify(mine);
   for (const [key, entry] of Object.entries(register)) {

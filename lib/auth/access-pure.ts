@@ -160,24 +160,40 @@ interface FloorLike {
 }
 
 /**
+ * The geometry and placement every unit keeps, whoever is asking. None of it
+ * says anything about who lives there -- and, for a citizen, none of it says
+ * WHICH flat it is either: the door number is a detail of a neighbour's
+ * home, and the citizen is served details of their own flat only.
+ */
+const PUBLIC_UNIT_FIELDS = [
+  'id', 'floor_id', 'level_no', 'z_min', 'z_max', 'ring', 'kind', 'core_ref',
+] as const;
+
+/**
  * Narrow a building detail document to what the caller may see.
  *
- * Gov and anon get it verbatim. A CITIZEN GETS THEIR FLAT AND NOTHING ELSE:
+ * Gov and anon get it verbatim. A CITIZEN GETS THEIR BUILDING, WITH DETAILS
+ * OF THEIR FLAT ALONE:
  *
- *   floors    only the level their flat is on, and without its ULPIN;
- *   units     their own flat, with its whole register entry, plus the parking
- *             bay that entry allocates to it -- the bay is a term of THEIR
- *             title, and the certificate prints it;
+ *   floors    every level, so the whole tower can be walked, but no floor
+ *             carries its ULPIN;
+ *   units     their own flat with its whole register entry, and the parking
+ *             bay that entry allocates -- the bay is a term of THEIR title,
+ *             and the certificate prints it. Every other volume keeps its
+ *             SHAPE and its kind and nothing else: no code, no label, no
+ *             ULPIN, no owner, no areas, no tenure. A structural core keeps
+ *             its label, because it has no identity to protect and the card
+ *             names it;
  *   building  name, address and massing (see CITIZEN_BUILDING_FIELDS); no
  *             identifier, no owner;
  *   parcel    dropped. The plot belongs to the developer.
  *
- * This REVERSES the earlier shown-but-redacted design, which kept every
- * neighbour's flat as an anonymous box and every floor as a rung. That was
- * argued for as the more honest picture of where a person lives, and it was;
- * but it also let a citizen page every level of the tower and read every
- * door number, and the product decision is now that the owner's view is the
- * owner's flat -- the other floors and flats are not theirs to browse at all.
+ * Shown-but-anonymous rather than removed: a citizen is meant to look at
+ * their building and any floor of it, and a plate with the neighbours
+ * deleted is a less honest picture of where they live than four flats of
+ * which one is theirs. But unlike the first version of this rule, the
+ * neighbours' door numbers go too -- "details of their own flat only" means
+ * exactly that.
  *
  * Done here, on the server, and not in the viewer: anyone can read a
  * response in devtools, so a filter that runs in the browser is decoration.
@@ -191,9 +207,6 @@ export function filterDetailForCaller<
 
   const own = units.find((u) => ownsUnit(ctx, u));
   const bayUlpin = (own as { parking_ulpin?: string } | undefined)?.parking_ulpin;
-  const bay = bayUlpin
-    ? units.find((u) => (u as { ulpin?: string }).ulpin === bayUlpin)
-    : undefined;
 
   const building = detail.building && typeof detail.building === 'object'
     ? (() => {
@@ -209,14 +222,26 @@ export function filterDetailForCaller<
   return {
     ...rest,
     building,
-    floors: floors
-      .filter((f) => f.level_no === ctx.floor)
-      .map((f) => {
-        const { ulpin: _u, ...keep } = f;
-        void _u;
-        return keep as FloorLike;
-      }),
-    units: [own, bay].filter((u): u is UnitLike => u !== undefined),
+    floors: floors.map((f) => {
+      const { ulpin: _u, ...keep } = f;
+      void _u;
+      return keep as FloorLike;
+    }),
+    units: units.map((u) => {
+      const source = u as unknown as Record<string, unknown>;
+      if (ownsUnit(ctx, u)) return u;
+      if (bayUlpin && source.ulpin === bayUlpin) return u;
+      const redacted: Record<string, unknown> = { restricted: true };
+      for (const k of PUBLIC_UNIT_FIELDS) {
+        if (k in source) redacted[k] = source[k];
+      }
+      // Fabric keeps its name: there is no holder behind a lift shaft.
+      if (FABRIC_KINDS.has((source.kind as string) ?? 'flat')) {
+        if ('unit_no' in source) redacted.unit_no = source.unit_no;
+        if ('label' in source) redacted.label = source.label;
+      }
+      return redacted as unknown as UnitLike;
+    }),
   } as unknown as T;
 }
 

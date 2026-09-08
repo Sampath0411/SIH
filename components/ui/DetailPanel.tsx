@@ -418,9 +418,13 @@ function unitKindOf(kind: string | undefined) {
  * Everything else falls back to "<noun> <code>", which is how a flat and a
  * shop are named on the door.
  */
-function unitTitle(unit: { unit_no: string; label?: string; kind?: string }): string {
+function unitTitle(unit: {
+  unit_no?: string; label?: string; kind?: string; restricted?: boolean;
+}): string {
   if (unit.label) return unit.label;
   const noun = unitKindOf(unit.kind).noun;
+  // A neighbour's volume, served with no code: named by what it is only.
+  if (!unit.unit_no) return noun || 'Unit';
   return noun ? `${noun} ${unit.unit_no}` : unit.unit_no;
 }
 
@@ -1088,13 +1092,19 @@ export default function DetailPanel() {
       // click cannot select one, but the panel says plainly why it is empty
       // rather than rendering a card full of dashes.
       if (unit.restricted) {
+        const bay = unit.kind === 'parking';
         return (
-          <Panel title={unitTitle(unit)} kicker="Not your flat">
+          <Panel title={unitTitle(unit)} kicker={bay ? 'Not your bay' : 'Not your flat'}>
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
-              This flat is on your floor, but its register entry is not yours
-              to read. You can see where it is and how big it is; its ULPIN,
-              owner, areas and tenure are only served to the person who holds
-              it and to the revenue department.
+              {bay
+                ? 'This bay is in your building, but it is allocated to another '
+                  + 'flat. You can see where it is; its number, identifier and '
+                  + 'allocation are only served to the flat it belongs to and '
+                  + 'to the revenue department.'
+                : 'This flat is in your building, but its record is not yours '
+                  + 'to read. You can see where it is and how big it is; its '
+                  + 'number, ULPIN, owner, areas and tenure are only served to '
+                  + 'the person who holds it and to the revenue department.'}
             </p>
           </Panel>
         );
@@ -1618,7 +1628,9 @@ export default function DetailPanel() {
         </div>
         <p className="mt-3 text-[11px] leading-snug text-[rgb(var(--muted))]">
           {mine
-            ? 'Click your flat to open its record, its parking bay and its certificate.'
+            ? 'Use the level ladder to look at any floor. Your flat is the one '
+              + 'that opens: its record, its parking bay and its certificate. '
+              + 'Other flats are shown as shapes only.'
             : 'Your flat is being located…'}
         </p>
       </Panel>

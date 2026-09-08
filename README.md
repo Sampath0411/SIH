@@ -520,15 +520,18 @@ its LA_BAUnit, and exported on the certificate as an *Appurtenant parking*
 block with the bay's own identifier. The seed refuses to write a register in
 which the bay and flat counts differ.
 
-**A citizen sees their flat and nothing else.** The building document served
-to a citizen holds their floor (without its ULPIN), their flat with its
-register entry, and the bay that entry allocates; the building keeps its name
-and massing and loses its identifier and owner; the parcel is dropped, and the
-buildings and parcels collections are stripped the same way. This reverses the
-earlier shown-but-redacted design on purpose: the owner's view is the owner's
-flat. The chrome follows the data -- one non-interactive rung, no layer,
-underground, stats, search, 2D GIS or slice controls -- and the tower stays as
-a faint shell so the plate has a building to belong to.
+**A citizen sees their building, with details of their flat alone.** The
+building document served to a citizen holds every floor (none with its
+ULPIN), their flat with its register entry, and the bay that entry allocates.
+Every other flat and bay keeps its shape and its kind and nothing else -- no
+door number, no label, no identifier, no register -- so a neighbour's volume
+is an anonymous mass the pick falls through. Structural cores keep their
+name, because nobody is behind a lift shaft. The building keeps its name and
+massing and loses its identifier and owner; the parcel is dropped, and the
+buildings and parcels collections are stripped the same way, so the map shows
+their building and no other. The chrome follows the data: the level ladder
+works (their own floor is marked), and the layer, underground, stats, search,
+2D GIS and slice controls are absent.
 
 ---
 
