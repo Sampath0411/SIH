@@ -39,6 +39,42 @@ import type { BuildingProps, UseType } from '@/lib/types';
  */
 
 
+/** How far the textured facade stands off the storey block, metres. */
+const WALL_OUTSET_M = 0.08;
+
+/** Perimeter of a lon/lat ring in metres (equirectangular; a footprint is small). */
+function ringPerimeterM(ring: number[][]): number {
+  const lat = ring[0][1];
+  const mLon = 111320 * Math.cos((lat * Math.PI) / 180);
+  let total = 0;
+  for (let i = 1; i < ring.length; i++) {
+    const dx = (ring[i][0] - ring[i - 1][0]) * mLon;
+    const dy = (ring[i][1] - ring[i - 1][1]) * 110574;
+    total += Math.hypot(dx, dy);
+  }
+  return total;
+}
+
+/**
+ * Push every vertex of a ring `metres` away from its centroid. Exact for a
+ * rectangle, close enough for any footprint at a few centimetres: this only
+ * has to separate two surfaces, not survey a boundary.
+ */
+function outsetRing(ring: number[][], metres: number): number[][] {
+  const n = ring.length - 1;
+  let cLon = 0, cLat = 0;
+  for (let i = 0; i < n; i++) { cLon += ring[i][0]; cLat += ring[i][1]; }
+  cLon /= n; cLat /= n;
+  const mLon = 111320 * Math.cos((cLat * Math.PI) / 180);
+  return ring.map(([lon, lat]) => {
+    const dx = (lon - cLon) * mLon;
+    const dy = (lat - cLat) * 110574;
+    const r = Math.hypot(dx, dy) || 1;
+    const k = 1 + metres / r;
+    return [cLon + (dx * k) / mLon, cLat + (dy * k) / 110574];
+  });
+}
+
 interface ModelState {
   explodeT: number;
 }
@@ -163,16 +199,36 @@ export default function BuildingModelLayer() {
     // blue polygon on top of the wall as a "glass overlay" -- it worked
     // against the contrast instead of with it, washing the windows out, so
     // it has been removed (see DL-K in docs/perf/decisions-log.md).
+    //
+    // THE WINDOWS ARE ON A WALL ENTITY, NOT ON THE EXTRUSION. Cesium gives an
+    // extruded polygon's side faces the same texture coordinates as its top
+    // face -- the plan-projected (x, y) of each vertex -- so an image on the
+    // extrusion is smeared into vertical stripes with no variation up the
+    // wall, and one tile is stretched around the whole perimeter. That is why
+    // the model read as a plain slab. WallGeometry maps s along the wall's
+    // length and t up its height, which is what a facade texture needs, and
+    // `repeat` tiles one 3 m bay per 3 m and one storey per block.
+    const perimeterM = ringPerimeterM(ring);
+    const bayRepeat = new Cesium.Cartesian2(Math.max(1, Math.round(perimeterM / 3)), 1);
     const wallCanvas = windowGrid(use, 3, FLOOR_H);
     const wallTexture = new Cesium.ImageMaterialProperty({
       image: wallCanvas,
       color: MATERIALS.buildingModelWall,
+      repeat: bayRepeat,
     });
     const groundCanvas = windowGrid(use, 3, FLOOR_H, true);
     const groundTexture = new Cesium.ImageMaterialProperty({
       image: groundCanvas,
       color: MATERIALS.buildingModelWall,
+      repeat: bayRepeat,
     });
+    // The facade sits WALL_OUTSET_M outside the storey block so the two
+    // surfaces never z-fight; the block itself is a plain wall tone.
+    const facadeRing = outsetRing(ring, WALL_OUTSET_M);
+    const facadeFlat = flatLonLat(facadeRing);
+    const facadePositions = Cesium.Cartesian3.fromDegreesArray(facadeFlat);
+    const facadeCount = facadeFlat.length / 2;
+    const blockMaterial = new Cesium.ColorMaterialProperty(MATERIALS.buildingModelWall);
 
     // Above-ground storeys 0..floors-1, then any basements as a solid grey
     // mass below grade. Each storey lifts by its own index when exploded.
@@ -188,9 +244,27 @@ export default function BuildingModelLayer() {
           hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
           height: settled.scalar(() => z0 + liftFor(i)),
           extrudedHeight: settled.scalar(() => z0 + FLOOR_H + liftFor(i)),
-          material: i === 0 ? groundTexture : wallTexture,
+          material: blockMaterial,
           outline: true,
           outlineColor: MATERIALS.buildingModelRoofLine,
+          shadows: shadowsRef.current,
+        },
+      });
+      // The facade: a wall around the storey carrying the window grid.
+      const facadeHeights = keyedValue(
+        () => z0 + liftFor(i),
+        (z) => ({
+          min: Array.from({ length: facadeCount }, () => z),
+          max: Array.from({ length: facadeCount }, () => z + FLOOR_H),
+        }),
+      );
+      ds.entities.add({
+        wall: {
+          positions: facadePositions,
+          minimumHeights: settled.value(() => facadeHeights().min),
+          maximumHeights: settled.value(() => facadeHeights().max),
+          material: i === 0 ? groundTexture : wallTexture,
+          outline: false,
           shadows: shadowsRef.current,
         },
       });
