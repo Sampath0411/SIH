@@ -246,21 +246,33 @@ const CORE_LEVELS = [-2, -1, ...Array.from({ length: 21 }, (_, i) => i)];
 /**
  * Subterranean parking, on B1 and B2.
  *
- * Two banks of bays against the north and south walls with a drive aisle
- * between them, which is where the cores stand. The aisle is deliberately not
- * modelled as a volume: it is circulation on a level that has no other
- * circulation to distinguish it from, and a box labelled "aisle" filling the
- * middle of the plate would hide the bays behind it.
+ * THREE BANKS PER LEVEL -- south wall, centre, north wall -- with a drive
+ * aisle between each pair. Fourteen 2.4 m bays fit along the 33.9 m the plate
+ * leaves between its end walls, which is a real bay width rather than the
+ * 3.4 m the old two-bank grid stretched to. The centre bank loses the two
+ * bays the cores stand through (x 0.47-0.53), so each level holds 14+12+14 =
+ * 40 bays and the two levels hold 80: ONE PER FLAT. Every flat's title
+ * carries a bay, and the certificate prints it.
  *
- * B3 gets none. It is plant, tankage and the sump -- the sewer tank utility
- * (99003) already sits at that depth -- and giving all three basements an
- * identical grid would state that they are interchangeable, which is the kind
- * of plausible filler this repository avoids elsewhere.
+ * The aisles ARE modelled now, as `circulation` rows -- but the viewer draws
+ * basement circulation as a painted strip on the plate, not as a box, so the
+ * bays stay visible. The old objection ("a box labelled aisle would hide the
+ * bays") was to the box, not to the record.
+ *
+ * B3 gets no bays. It is plant, tankage and the sump -- the sewer tank
+ * utility (99003) already sits at that depth -- and giving all three
+ * basements an identical grid would state that they are interchangeable,
+ * which is the kind of plausible filler this repository avoids elsewhere. It
+ * carries one `plant` volume instead, so isolating it shows what it is for.
  */
 const PARKING_LEVELS = [-1, -2];
-const BAYS_PER_BANK = 10;
-/** South bank, then north bank: [y0, y1] of each. */
-const PARKING_BANKS = [[0.05, 0.28], [0.72, 0.95]];
+const BAYS_PER_BANK = 14;
+/** South, centre, north: [y0, y1] of each bank as a fraction of the plate. */
+const PARKING_BANKS = [[0.03, 0.19], [0.42, 0.58], [0.81, 0.97]];
+/** The drive aisles between the banks, same convention. */
+const PARKING_AISLES = [[0.19, 0.42], [0.58, 0.81]];
+/** The x-band the two cores occupy on every level they pass through. */
+const CORE_X = [0.47, 0.53];
 
 /** Indian flat numbering: floor 2 slot 1 -> "201", floor 20 slot 3 -> "2003". */
 function flatCode(level, slotNo) {
@@ -720,30 +732,48 @@ for (const lvl of FLAT_FLOORS) {
 // ---------------------------------------------------------------------------
 const floorByLevel = new Map(floors.map((f) => [f.level_no, f]));
 
-/** Push one non-flat volume, taking the next id from the shared counter. */
-function pushVolume({ level, kind, ordinal, unit_no, label, frac, tenure }) {
+/**
+ * Push one non-flat volume, taking the next id from the shared counter.
+ *
+ * `identity: false` writes the row WITHOUT a ULPIN, areas or tenure. That is
+ * what a structural core gets: a lift shaft is building fabric, not a
+ * registered spatial unit anyone could hold, and an identifier on it invited
+ * exactly the reading the panel then had to talk the user out of. The
+ * PostGIS half still mints one, because `unit.ulpin` is NOT NULL there, and
+ * the API strips it on the way out for both backends (stripCoreIdentity in
+ * lib/auth/access-pure.ts) so the two responses are byte-identical.
+ */
+function pushVolume({
+  level, kind, ordinal, unit_no, label, frac, tenure, identity = true, core_ref,
+}) {
   const floorEntry = floorByLevel.get(level);
   if (!floorEntry) return;
   const [fx0, fy0, fx1, fy1] = frac;
   const area = fracAreaM2(fx0, fy0, fx1, fy1);
-  units.push({
+  const row = {
     id: unitIdBase + unitCounter,
     floor_id: floorEntry.id,
-    ulpin: `${floorEntry.ulpin}-${unitSlot(kind, ordinal)}`,
     unit_no,
     level_no: level,
     z_min: floorEntry.z_min,
     z_max: floorEntry.z_max,
-    // Carpet is the usable area; for a bay or a shaft it IS the enclosed
-    // area, so the 0.72 factor the flats use does not apply.
-    carpet_m2: Math.round(area * 10) / 10,
-    built_m2: Math.round(area * 10) / 10,
-    tenure,
-    encumbrance: 'None',
     kind,
     label,
     ring: { type: 'Polygon', coordinates: fracRing(fx0, fy0, fx1, fy1) },
-  });
+  };
+  if (identity) {
+    Object.assign(row, {
+      ulpin: `${floorEntry.ulpin}-${unitSlot(kind, ordinal)}`,
+      // Carpet is the usable area; for a bay or a shaft it IS the enclosed
+      // area, so the 0.72 factor the flats use does not apply.
+      carpet_m2: Math.round(area * 10) / 10,
+      built_m2: Math.round(area * 10) / 10,
+      tenure,
+      encumbrance: 'None',
+    });
+  }
+  if (core_ref) row.core_ref = core_ref;
+  units.push(row);
   unitCounter++;
 }
 
@@ -753,14 +783,18 @@ function pushVolume({ level, kind, ordinal, unit_no, label, frac, tenure }) {
 for (const level of PARKING_LEVELS) {
   const series = -level * 100;
   let n = 0;
-  for (const [by0, by1] of PARKING_BANKS) {
+  PARKING_BANKS.forEach(([by0, by1], bank) => {
     for (let i = 0; i < BAYS_PER_BANK; i += 1) {
-      n += 1;
       // A hairline gap between neighbouring bays, so the painted line between
       // two cars is visible rather than two solids sharing a wall. The flats
       // get the same treatment at render time via FLOOR_VIEW.UNIT_INSET_M.
       const x0 = 0.05 + (0.90 / BAYS_PER_BANK) * i + 0.004;
       const x1 = 0.05 + (0.90 / BAYS_PER_BANK) * (i + 1) - 0.004;
+      // The centre bank is where the cores come down. A bay drawn through a
+      // lift shaft would be a clash the topology check is built to catch.
+      const underCore = bank === 1 && x1 > CORE_X[0] && x0 < CORE_X[1];
+      if (underCore) continue;
+      n += 1;
       const ordinal = series + n;
       pushVolume({
         level,
@@ -774,27 +808,49 @@ for (const level of PARKING_LEVELS) {
         tenure: 'Appurtenant',
       });
     }
-  }
+  });
+  // The two drive aisles. Circulation, like the lobby, and carrying no
+  // identity for the same reason the cores carry none: nobody holds an aisle.
+  PARKING_AISLES.forEach(([ay0, ay1], i) => {
+    pushVolume({
+      level,
+      kind: 'circulation',
+      unit_no: `AISLE-${i + 1}`,
+      label: `Drive aisle ${i + 1}`,
+      frac: [0.03, ay0, 0.97, ay1],
+      identity: false,
+    });
+  });
 }
+
+// ---- B3: plant and tankage -----------------------------------------------
+// The deepest level holds the sump the sewer tank (99003) drains to, the
+// pumps and the water tanks. One volume, so the level is not an empty plate,
+// and no identity, because plant is building fabric like the cores.
+pushVolume({
+  level: -3,
+  kind: 'plant',
+  unit_no: 'PLANT',
+  label: 'Plant, pumps and tankage',
+  frac: [0.06, 0.06, 0.94, 0.94],
+  identity: false,
+});
 
 // ---- the two vertical cores ----------------------------------------------
 // One row per level, sharing core_ref. See the CORES comment above for why
-// this is not a single spanning solid.
+// this is not a single spanning solid, and pushVolume for why it has no
+// identity.
 for (const core of CORES) {
   for (const level of CORE_LEVELS) {
     pushVolume({
       level,
       kind: core.kind,
-      ordinal: undefined,
       unit_no: core.unit_no,
       label: core.label,
       frac: core.frac,
-      tenure: 'Common area',
+      identity: false,
+      core_ref: core.core_ref,
     });
-    // pushVolume cannot carry core_ref through its argument list without
-    // making every caller pass a null, so it is set on the row just written.
-    const just = units[units.length - 1];
-    if (just && just.level_no === level) just.core_ref = core.core_ref;
   }
 }
 
@@ -805,11 +861,10 @@ for (const core of CORES) {
 pushVolume({
   level: 0,
   kind: 'circulation',
-  ordinal: 1,
   unit_no: 'LOBBY',
   label: 'Entrance Lobby',
   frac: [0.06, 0.06, 0.94, 0.28],
-  tenure: 'Common area',
+  identity: false,
 });
 
 // ---- which bay belongs to which flat --------------------------------------
@@ -828,10 +883,12 @@ pushVolume({
 // the bay to the LA_BAUnit as an `appurtenant` member. Because it lives in
 // the register, it works identically on PostGIS and on the snapshot.
 //
-// THERE ARE 40 BAYS AND 80 FLATS, and that asymmetry is kept rather than
-// smoothed away: half the tower has a bay and half does not, so the panel has
-// to render both cases. Allocation is in flat order, lowest floor first,
-// which is both deterministic and the order a builder actually sells in.
+// EIGHTY BAYS FOR EIGHTY FLATS. Every flat's title carries exactly one bay, so
+// the certificate can print it as an appurtenant right and the bay's own card
+// can say which flat it is reserved for. Allocation is in flat order, lowest
+// floor first, and the lower basement fills first -- both deterministic, and
+// the order a builder actually sells in. The script fails loudly if the two
+// counts ever drift apart again.
 {
   const bays = units
     .filter((u) => u.kind === 'parking')
@@ -839,13 +896,19 @@ pushVolume({
   const flats = units
     .filter((u) => u.kind === undefined || u.kind === 'flat')
     .sort((a, b) => a.level_no - b.level_no || a.unit_no.localeCompare(b.unit_no));
+  if (bays.length !== flats.length) {
+    throw new Error(
+      `parking: ${bays.length} bays for ${flats.length} flats -- the layout `
+      + 'must give every flat exactly one bay',
+    );
+  }
   flats.forEach((flat, i) => {
     const bay = bays[i];
-    if (!bay) return;
     const entry = flatRegister[flat.ulpin];
-    if (!entry) return;
+    if (!entry) throw new Error(`no register entry for ${flat.ulpin}`);
     entry.parking_ulpin = bay.ulpin;
     entry.parking_label = bay.label;
+    entry.parking_level = bay.level_no;
   });
 }
 
@@ -858,6 +921,101 @@ detail[String(BUILDING_ID)] = {
   floors,
   units,
 };
+
+// ---------------------------------------------------------------------------
+// 3c. ladm.json -- the ISO 19152 projection of the tower, for the snapshot
+// backend.
+//
+// scripts/05_export_static.py dumps this file from PostGIS after
+// ladm_backfill(), and used to be the ONLY way the tower's entries got there:
+// re-seeding the tower without re-exporting left the Legal tab describing
+// bays that no longer existed. The shapes written here mirror ladmSql() in
+// lib/db.ts field for field (the same contract the exporter keeps), and the
+// PostGIS half below runs ladm_backfill() so a later export reproduces them.
+//
+// Only volumes WITH an identity get an entry: a flat and a bay are spatial
+// units; a core, an aisle and the plant room are fabric, and have no su_id
+// to be addressed by. The parcel's own entry is left alone -- it is the
+// exporter's, and its undivided-share denominator is the flat count, which
+// has not changed.
+//
+// What the flat's document does NOT carry here: the bay as an appurtenant
+// member, and the mortgage, tax and bill rights. Those are layered on at read
+// time from the register by lib/db.ts, identically for both backends.
+// ---------------------------------------------------------------------------
+const LADM_SNAPSHOT = path.join(API, 'ladm.json');
+{
+  let ladm = {};
+  try { ladm = await readJson(LADM_SNAPSHOT); } catch { /* first export */ }
+  const towerPrefix = `${ULPIN_BASE}-001-`;
+  for (const k of Object.keys(ladm)) {
+    if (k.startsWith(towerPrefix)) delete ladm[k];
+  }
+  const flatCount = units.filter((u) => u.kind === undefined || u.kind === 'flat').length;
+  let seq = 0;
+  for (const u of units) {
+    if (!u.ulpin) continue;
+    seq += 1;
+    const isFlat = u.kind === undefined || u.kind === 'flat';
+    const label = u.label ?? u.unit_no;
+    const entry = {
+      su: {
+        su_id: u.ulpin,
+        su_type: 'multi_storey',
+        dimension: '3D',
+        source_kind: 'unit',
+        source_id: u.id,
+        provenance: 'surveyed',
+        z_min: u.z_min,
+        z_max: u.z_max,
+        volume_m3: Math.round(u.built_m2 * (u.z_max - u.z_min) * 10) / 10,
+        label,
+        ring: u.ring,
+      },
+      ba_unit: null,
+      rrrs: [],
+      easements: [],
+    };
+    if (isFlat) {
+      // Synthetic ids in the demo range, so they cannot collide with anything
+      // the exporter issued for the 384 OSM buildings.
+      entry.ba_unit = {
+        ba_unit_id: 990000 + seq,
+        ba_ulpin: `${u.ulpin}-BA`,
+        name: `Flat ${u.unit_no}`,
+        ba_type: 'condominium_unit',
+        ulpin_14: null,
+        members: [
+          { su_id: u.ulpin, member_role: 'principal', share_num: 1, share_den: 1,
+            su_type: 'multi_storey', label },
+          { su_id: ULPIN_BASE, member_role: 'undivided_share', share_num: 1,
+            share_den: flatCount, su_type: 'surface', label: `Plot ${ULPIN_BASE}` },
+        ],
+      };
+      entry.rrrs = [{
+        rrr_id: 990000 + seq,
+        rrr_class: 'right',
+        rrr_type: 'ownership',
+        share_num: 1,
+        share_den: 1,
+        time_spec_from: null,
+        time_spec_to: null,
+        amount_inr: null,
+        reference: null,
+        description: u.tenure,
+        party: {
+          party_id: 990000 + seq,
+          name: u.owner,
+          party_type: 'natural_person',
+          role: 'owner',
+          authority_code: null,
+        },
+      }];
+    }
+    ladm[u.ulpin] = entry;
+  }
+  await writeJson(LADM_SNAPSHOT, ladm);
+}
 
 // ---------------------------------------------------------------------------
 // 4. utilities.json -- the building's three internal lines.
@@ -993,8 +1151,9 @@ console.log(
 );
 console.log(`  flat register: ${mortgaged} mortgaged, ${taxDue} with tax outstanding`);
 console.log(
-  `  ${byKind.parking ?? 0} parking slots on B1-B2`
-  + `, ${byKind.circulation ?? 0} lobby`,
+  `  ${byKind.parking ?? 0} parking bays on B1-B2, one per flat`
+  + `, ${byKind.circulation ?? 0} circulation (lobby + aisles)`
+  + `, ${byKind.plant ?? 0} plant room on B3`,
 );
 console.log(
   `  cores: ${byKind.elevator ?? 0}-level lift shaft + `
@@ -1036,6 +1195,30 @@ async function seedPostgis() {
 
   const ring2d = (ring) =>
     `SRID=4326;POLYGON((${ring.map(([x, y]) => `${x} ${y}`).join(',')}))`;
+
+  /**
+   * The ULPIN a volume without an identity is stored under.
+   *
+   * `unit.ulpin` is UNIQUE NOT NULL, so the cores, the aisles, the lobby and
+   * the plant room need one here even though the snapshot carries none and
+   * the API strips it. Minted from the kind's slot prefix and the ordinal
+   * in the code ('AISLE-2' -> C02), which is what the exporter would have
+   * written; two aisles on one level therefore stay distinct.
+   */
+  const dbUlpin = (u) => {
+    if (u.ulpin) return u.ulpin;
+    const floorEntry = floorByLevel.get(u.level_no);
+    const m = /-(\d+)$/.exec(u.unit_no);
+    const ordinal = m ? Number(m[1]) : undefined;
+    return `${floorEntry.ulpin}-${unitSlot(u.kind, ordinal)}`;
+  };
+  /** Enclosed area of a volume's ring, m², for the NOT NULL area columns. */
+  const enclosedM2 = (u) => {
+    const r = u.ring.coordinates[0];
+    const w = Math.abs(r[1][0] - r[0][0]) * 111000;
+    const h = Math.abs(r[2][1] - r[1][1]) * 111000;
+    return Math.round(w * h * 10) / 10;
+  };
 
   try {
     const { rows } = await client.query(
@@ -1123,9 +1306,14 @@ async function seedPostgis() {
          VALUES ($1,$2,$3,$4,
                  make_prism(ST_GeomFromEWKT($5), $6, $7),
                  $6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-        [u.id, u.floor_id, u.ulpin, u.unit_no,
+        [u.id, u.floor_id, dbUlpin(u), u.unit_no,
           ring2d(u.ring.coordinates[0]), u.z_min, u.z_max,
-          u.carpet_m2, u.built_m2, u.tenure, u.encumbrance,
+          // A volume without an identity has no areas or tenure in the
+          // snapshot; the columns are NOT NULL here, so the enclosed area and
+          // 'Common area' stand in. The API never serves them: see
+          // stripCoreIdentity in lib/auth/access-pure.ts.
+          u.carpet_m2 ?? enclosedM2(u), u.built_m2 ?? enclosedM2(u),
+          u.tenure ?? 'Common area', u.encumbrance ?? 'None',
           u.owner ?? null, u.address ?? null, u.facing ?? null,
           // A flat carries no `kind` in the row objects above, so the column
           // default is spelled out here rather than relying on the INSERT
@@ -1155,9 +1343,26 @@ async function seedPostgis() {
       );
     }
 
+    // The ISO 19152 projection, rebuilt from the rows just written so the
+    // Legal tab on PostGIS describes the same bays and flats the snapshot
+    // does. The function deletes and recreates the project's LADM rows, so
+    // it is safe to run on every seed.
+    let ladmNote = 'LADM tables absent, backfill skipped';
+    try {
+      const { rows: filled } = await client.query(
+        'SELECT * FROM ladm_backfill($1)', [projectId],
+      );
+      const f = filled[0] ?? {};
+      ladmNote = `ladm_backfill: ${f.spatial_units} spatial units, `
+        + `${f.ba_units} BA units, ${f.rrrs} rights`;
+    } catch (err) {
+      ladmNote += ` (${err.message.split('\n')[0]})`;
+    }
+
     await client.query('COMMIT');
     console.log(`PostGIS: building ${BUILDING_ID}, ${floors.length} floors, `
       + `${units.length} volumes, 3 utilities upserted.`);
+    console.log(`PostGIS: ${ladmNote}`);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error(`PostGIS: FAILED, snapshot is still correct -- ${err.message}`);

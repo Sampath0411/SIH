@@ -35,23 +35,35 @@ const byKind = tower.units.reduce((a, u) => {
   return a;
 }, {});
 check('Sampath: 80 flats', byKind.flat === 80, `got ${byKind.flat}`);
-check('Sampath: parking bays on B1/B2', (byKind.parking ?? 0) === 40, `got ${byKind.parking}`);
+check('Sampath: one parking bay per flat on B1/B2', (byKind.parking ?? 0) === 80, `got ${byKind.parking}`);
 check('Sampath: lift shaft per level', (byKind.elevator ?? 0) === 23, `got ${byKind.elevator}`);
 check('Sampath: stair core per level', (byKind.stair ?? 0) === 23, `got ${byKind.stair}`);
+check('Sampath: drive aisles and a plant room',
+  (byKind.circulation ?? 0) >= 5 && (byKind.plant ?? 0) === 1,
+  `${byKind.circulation} circulation, ${byKind.plant} plant`);
 
 const bays = tower.units.filter((u) => u.kind === 'parking');
 check('parking ULPINs carry the P slot',
   bays.every((u) => /-B[12]-P\d{3}$/.test(u.ulpin)), bays[0]?.ulpin);
 check('every basement level now has volumes',
-  [-1, -2].every((l) => tower.units.some((u) => u.level_no === l)));
+  [-1, -2, -3].every((l) => tower.units.some((u) => u.level_no === l)));
+const flatsWithBay = tower.units.filter((u) => (u.kind ?? 'flat') === 'flat' && u.parking_ulpin);
+check('every flat carries its bay', flatsWithBay.length === 80, `got ${flatsWithBay.length}`);
+check('no two flats share a bay',
+  new Set(flatsWithBay.map((u) => u.parking_ulpin)).size === 80);
+check('every allocated bay exists',
+  flatsWithBay.every((u) => bays.some((b) => b.ulpin === u.parking_ulpin)));
 
 const cores = tower.units.filter((u) => u.core_ref === 'EV1');
 const levels = cores.map((u) => u.level_no).sort((a, b) => a - b);
 check('lift shaft spans B2 to the top floor',
   levels[0] === -2 && levels[levels.length - 1] === 20,
   `${levels[0]}..${levels[levels.length - 1]}`);
-check('core segments share one ULPIN slot',
-  cores.every((u) => u.ulpin.endsWith('-EV')));
+check('core segments carry no ULPIN -- a shaft is fabric, not a holding',
+  cores.every((u) => u.ulpin === undefined && u.tenure === undefined));
+check('fabric carries no ULPIN on any level',
+  tower.units.filter((u) => ['elevator', 'stair', 'circulation', 'plant'].includes(u.kind))
+    .every((u) => u.ulpin === undefined));
 
 console.log('\n[2] API — Dutt Island retail plan');
 const mall = await fetch(`${ORIGIN}/api/p/${SLUG}/building/${MALL}`).then((r) => r.json());
@@ -211,7 +223,6 @@ console.log('\n[4] Deed export');
   const samples = [
     ['flat', tower.units.find((u) => u.kind === 'flat'), tower, true],
     ['parking bay', tower.units.find((u) => u.kind === 'parking'), tower, false],
-    ['lift core', tower.units.find((u) => u.kind === 'elevator'), tower, false],
     ['shop', mall.units.find((u) => u.kind === 'retail'), mall, true],
     ['anchor store', mall.units.find((u) => u.kind === 'anchor'), mall, true],
   ];

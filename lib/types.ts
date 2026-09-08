@@ -270,6 +270,14 @@ export interface UnitInfo {
   mortgage?: MortgageInfo;
   tax?: TaxInfo;
   bills?: BillInfo[];
+  /**
+   * The parking bay this flat's title allocates: the same three fields as
+   * on FlatRegisterEntry, merged onto the flat with the rest of its register
+   * entry. The panel prints them and the certificate exports them.
+   */
+  parking_ulpin?: string;
+  parking_label?: string;
+  parking_level?: number;
 }
 
 /** Held outright, or held with a bank's charge on it. */
@@ -338,12 +346,15 @@ export interface FlatRegisterEntry {
    * undivided share of the ground one administrative record rather than
    * three rows that happen to share a name.
    *
-   * Optional twice over: only the demo tower has a register at all, and only
-   * half its flats have a bay -- there are 40 bays and 80 flats.
+   * Optional because only the demo tower has a register at all. Where there
+   * is one, every flat carries exactly one bay: the seed refuses to write a
+   * register in which the two counts differ.
    */
   parking_ulpin?: string;
   /** 'Parking Slot P-213'. The label the bay is known by on screen. */
   parking_label?: string;
+  /** The level the bay is on (-1 for B1), so the card can say where. */
+  parking_level?: number;
 }
 
 export interface BuildingDetail {
