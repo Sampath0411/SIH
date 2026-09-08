@@ -70,12 +70,31 @@ export default function DeedButton({
       const a = document.createElement('a');
       a.href = url;
       a.download = deedFilename(deed);
+      // Hidden rather than merely off-screen, so appending it cannot shift
+      // the panel's layout for the frame it exists.
+      a.style.display = 'none';
       document.body.appendChild(a);
       a.click();
-      a.remove();
-      // Revoked on the next tick rather than immediately: Safari has not
-      // finished reading the blob when click() returns.
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+
+      /**
+       * THE ANCHOR AND THE BLOB URL BOTH HAVE TO OUTLIVE THE CLICK.
+       *
+       * `a.click()` on a `download` link starts an ASYNCHRONOUS fetch of the
+       * blob. Removing the element on the next statement -- which is what this
+       * did -- pulls the download's own initiator out of the document while it
+       * is still starting, and Chrome cancels it. The symptom is the worst
+       * kind: the PDF is built correctly, the browser reports the right
+       * filename and byte count, and then nothing arrives. Revoking the object
+       * URL early does the same thing for the same reason.
+       *
+       * So both are torn down on a later task instead. The delay is long
+       * enough for the browser to have taken its own reference to the blob and
+       * short enough that nothing accumulates across repeated clicks.
+       */
+      setTimeout(() => {
+        a.remove();
+        URL.revokeObjectURL(url);
+      }, 30_000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'could not generate the deed');
       if (timer.current) clearTimeout(timer.current);
