@@ -387,19 +387,26 @@ def set_status(project, status):
     )
 
 
-def write_elevation(project, elev_source, elev_datum):
+def write_elevation(project, elev_source, elev_datum, geoid_sep_m=None):
     """Record where this project's ground_elev came from, and in which datum.
 
     'cartodem_v3' + 'msl_egm96' when scripts/dem.py sampled a real raster;
     'placeholder' + NULL when every building kept the 12.0 m default. The
     viewer and the README truth table read this rather than guessing from the
     values.
+
+    geoid_sep_m is the EGM96 separation at the AOI centre, which is what lets
+    the viewer convert a stored orthometric height back to the ellipsoidal one
+    Cesium wants. NULL when unknown -- never 0.0, which would assert that the
+    geoid and the ellipsoid coincide.
     """
     import pg
     datum = _lit(elev_datum) if elev_datum else "NULL"
+    sep = "NULL" if geoid_sep_m is None else repr(float(geoid_sep_m))
     pg.run(
         f"UPDATE projects SET elev_source = {_lit(elev_source)}, "
-        f"elev_datum = {datum} WHERE slug = {_lit(project.slug)};",
+        f"elev_datum = {datum}, geoid_sep_m = {sep} "
+        f"WHERE slug = {_lit(project.slug)};",
         quiet=True,
     )
 

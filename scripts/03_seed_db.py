@@ -52,7 +52,8 @@ def main():
     # reads its scope from. Must happen before the SQL file runs.
     proj.make_seed_ctx(p)
     proj.write_elevation(p, elevation.get("elev_source", "placeholder"),
-                         elevation.get("elev_datum"))
+                         elevation.get("elev_datum"),
+                         elevation.get("geoid_sep_m"))
 
     print(f"staging {len(buildings)} buildings, {len(highways)} road ways")
     pg.run(STAGE_DDL, quiet=True)

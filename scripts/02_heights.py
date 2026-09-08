@@ -243,6 +243,9 @@ def main():
     fc["elevation"] = {
         "elev_source": demmod.ELEV_SOURCE if (dem and sampled) else "placeholder",
         "elev_datum": dem.datum if (dem and sampled) else None,
+        # EGM96 geoid height above the ellipsoid at the AOI centre, metres.
+        # None, never 0.0, when it could not be computed -- see dem.py.
+        "geoid_sep_m": dem.geoid_sep if (dem and sampled) else None,
         "dem": demmod._rel(dem.path) if dem else None,
         "sampler": dem.kind if dem else None,
         "sampled": sampled,

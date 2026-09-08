@@ -236,6 +236,10 @@ class Sampler:
         self._src = None
         self._tool = None
         self._to_msl = None
+        # Set here as well as below, because the two early returns above leave
+        # a Sampler that is falsy but still attribute-accessed by 02_heights.
+        self.datum = None
+        self.geoid_sep = None
         for cand in (p.dem_path, p.global_dem_path):
             if os.path.exists(cand):
                 self.path = cand
@@ -267,9 +271,15 @@ class Sampler:
         if DEM_DATUM == "ellipsoidal":
             self._to_msl = _egm96_transformer()
             self.datum = ELEV_DATUM
+            # The geoid separation at the AOI centre, recorded once so the
+            # viewer can convert back. See geoid_separation() below.
+            self.geoid_sep = geoid_separation(p.lon0, p.lat0, self._to_msl)
             print("  datum: ellipsoidal (WGS84) -> orthometric via EGM96 (pyproj)")
+            if self.geoid_sep is not None:
+                print(f"  geoid separation at AOI centre: {self.geoid_sep:.2f} m")
         else:
             self.datum = "msl"
+            self.geoid_sep = None
 
     def __bool__(self):
         return self.path is not None
@@ -322,6 +332,35 @@ class Sampler:
     def close(self):
         if self._src is not None:
             self._src.close()
+
+
+def geoid_separation(lon, lat, transformer=None):
+    """EGM96 geoid height above the WGS84 ellipsoid at one point, metres.
+
+    Negative wherever the geoid sits below the ellipsoid, which is everywhere in
+    peninsular India -- about -65 m over Visakhapatnam.
+
+    Computed by asking the same transformer what an ellipsoidal height of 0
+    becomes as an orthometric one: H = h - N, so with h = 0, H = -N and the
+    separation is -H. scripts/hazard.py does the identical trick to find sea
+    level in raw ellipsoidal metres; this returns the separation itself, which
+    is what the viewer needs to convert a stored MSL height back for Cesium.
+
+    Recorded ONCE per project, at the bbox centre. EGM96 is a long-wavelength
+    model, so across an AOI of a few kilometres its undulation moves by
+    centimetres -- far below the accuracy of anything else in this pipeline --
+    and a per-point grid on the JS side would be precision this data does not
+    have. Returns None rather than 0.0 if it cannot be computed: 0.0 would be a
+    claim that the two datums coincide.
+    """
+    try:
+        t = transformer if transformer is not None else _egm96_transformer()
+        _, _, H = t.transform(lon, lat, 0.0)
+        if not math.isfinite(H):
+            return None
+        return float(-H)
+    except Exception:  # noqa: BLE001 - no grid, no network, no pyproj
+        return None
 
 
 def _egm96_transformer():
