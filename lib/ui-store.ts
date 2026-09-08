@@ -30,6 +30,21 @@ export type SheetSnap = 'peek' | 'half' | 'full';
  */
 export type SheetTab = 'detail' | 'layers' | 'key' | 'stats';
 
+/**
+ * Which tab the DETAIL PANEL itself is showing.
+ *
+ * Distinct from SheetTab above, which chooses between whole panels in the
+ * compact regime. This one lives INSIDE the detail panel and exists in every
+ * regime -- in the compact one, both are on screen at once and the sheet's
+ * 'detail' tab contains this strip.
+ *
+ * 'Details' and 'Legal', never a number, for the reason SheetTab documents --
+ * and never 'Detail' either, which is already a sheet tab label: two buttons
+ * reading the same word would make verify_ui.mjs's first-match selectors
+ * ambiguous in exactly the regime where both are mounted.
+ */
+export type DetailTab = 'details' | 'ladm';
+
 export interface UiState {
   /**
    * Medium regime: the off-canvas layer panel.
@@ -45,11 +60,22 @@ export interface UiState {
   /** Compact regime: bottom-sheet position and tab. */
   sheetSnap: SheetSnap;
   sheetTab: SheetTab;
+  /**
+   * Which tab the detail panel is showing.
+   *
+   * Kept ACROSS selections rather than reset to 'details' on each one: a user
+   * comparing the rights on two flats should not have to reopen the tab for
+   * the second. It is reset only where the tab cannot apply -- LadmTab itself
+   * is simply not mounted for a mode that has no spatial unit, and the strip
+   * disappears with it.
+   */
+  detailTab: DetailTab;
 
   setDrawerOpen: (open: boolean) => void;
   toggleDrawer: () => void;
   setSheetSnap: (snap: SheetSnap) => void;
   setSheetTab: (tab: SheetTab) => void;
+  setDetailTab: (tab: DetailTab) => void;
   /**
    * Bring the detail tab into view after a selection.
    *
@@ -65,11 +91,13 @@ export const useUiStore = create<UiState>((set) => ({
   drawerOpen: true,
   sheetSnap: 'peek',
   sheetTab: 'detail',
+  detailTab: 'details',
 
   setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
   toggleDrawer: () => set((s) => ({ drawerOpen: !s.drawerOpen })),
   setSheetSnap: (sheetSnap) => set({ sheetSnap }),
   setSheetTab: (sheetTab) => set({ sheetTab }),
+  setDetailTab: (detailTab) => set({ detailTab }),
 
   revealDetail: () =>
     set((s) => ({

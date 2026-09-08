@@ -1652,17 +1652,17 @@ interface LadmRaw {
 const EMPTY_LADM: LadmRaw = { su: null, ba_unit: null, rrrs: [], easements: [] };
 
 /**
- * The plan ring of a spatial unit, whatever geometry its source stores.
+ * The 2-D plan geometry of the spatial unit under selection.
  *
- * A unit's solid is a POLYHEDRALSURFACE whose first face is the floor plate --
- * the same extraction detailSql already does for a unit's ring. A parcel is a
- * Polygon and a utility centreline a LineString, and both survive ST_Force2D
- * whole. Written once here rather than three times in the query below.
+ * ladm_plan_geom() is a SQL function (db/02_functions.sql) rather than a
+ * fragment written out here, because scripts/05_export_static.py needs the
+ * identical expression and because doing it by hand failed twice: GEOS and the
+ * geography type both refuse a POLYHEDRALSURFACE, and ST_Force2D does not help
+ * -- the 2-D projection of a polyhedral surface is still one. The function
+ * takes the solid's first face, which for every prism make_prism() builds is
+ * the floor plate.
  */
-const SU_RING_SQL = `
-  CASE WHEN GeometryType(s.geom_3d) = 'POLYHEDRALSURFACE'
-       THEN ST_AsGeoJSON(ST_Force2D(ST_GeometryN(s.geom_3d, 1)), 7)::json
-       ELSE ST_AsGeoJSON(ST_Force2D(s.geom_3d), 7)::json END`;
+const SU_PLAN = 'ladm_plan_geom(s.geom_3d)';
 
 /**
  * The whole LADM document for one spatial unit, in one round trip.
@@ -1686,7 +1686,7 @@ function ladmSql(scope: Scope, suId: string) {
               'provenance', s.provenance,
               'z_min', s.z_min, 'z_max', s.z_max, 'volume_m3', s.volume_m3,
               'label', COALESCE(u.label, u.unit_no, 'Plot ' || s.su_id),
-              'ring', ${SU_RING_SQL})
+              'ring', ST_AsGeoJSON(${SU_PLAN}, 7)::json)
              FROM s LEFT JOIN unit u ON s.source_kind = 'unit' AND u.id = s.source_id),
 
     'ba_unit', (SELECT json_build_object(
@@ -1764,9 +1764,9 @@ function ladmSql(scope: Scope, suId: string) {
               -- The && prefilter is the cheap bbox pass the 2-D index can
               -- serve, exactly as topologySql does above.
               WHERE ST_Force2D(ut.geom_3d)
-                    && ST_Expand(ST_Force2D(s.geom_3d), ${TOPOLOGY_PAD_DEG})
+                    && ST_Expand(${SU_PLAN}, ${TOPOLOGY_PAD_DEG})
                 AND ST_DWithin(ST_Force2D(ut.geom_3d)::geography,
-                               ST_Force2D(s.geom_3d)::geography, ut.radius_m)
+                               ${SU_PLAN}::geography, ut.radius_m)
                 AND (s.z_min IS NULL
                      OR (es.z_min <= s.z_max AND s.z_min <= es.z_max))), '[]'::json)
   ) AS doc`,

@@ -15,11 +15,14 @@
  * department. The disclaimer sits under the identifier, in the body, not in a
  * footnote.
  */
-import { deedBoundsRows, deedRows, type DeedDoc } from './certificate.ts';
+import { deedBoundsRows, deedRows, ladmRows, type DeedDoc } from './certificate.ts';
 
 /** A4 portrait, in millimetres. */
 const PAGE = { w: 210, h: 297 };
 const MARGIN = 18;
+// Room for the footer line, which sits at PAGE.h - 12. Content must stop above
+// it rather than run underneath it.
+const BOTTOM_MARGIN = 20;
 // Greys, as explicit RGB triples: jspdf's typings take a single argument as a
 // CSS colour STRING, so a bare number is a type error rather than a grey.
 const INK: [number, number, number] = [17, 17, 17];
@@ -99,7 +102,7 @@ export async function renderDeed(deed: DeedDoc): Promise<Blob> {
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(6.5);
   doc.setTextColor(...MUTED);
-  doc.text('Scan for the parcel API record', qrX, y + QR_MM + 3, { maxWidth: QR_MM });
+  doc.text('Scan for the ISO 19152 record', qrX, y + QR_MM + 3, { maxWidth: QR_MM });
 
   // ---- the record -------------------------------------------------------
   const tableW = contentW - QR_MM - 8;
@@ -111,7 +114,19 @@ export async function renderDeed(deed: DeedDoc): Promise<Blob> {
   // ---- spatial extent ---------------------------------------------------
   y = table(doc, 'Spatial extent', deedBoundsRows(deed), MARGIN, y + 2, contentW);
 
+  // ---- ISO 19152 --------------------------------------------------------
+  // Omitted entirely when the volume is not in the registry, rather than
+  // printed as a heading over nothing: a certificate that shows an empty
+  // "Legal and spatial rights" block asserts that a holding has none.
+  const ladm = ladmRows(deed);
+  if (ladm.length) {
+    y = breakIfNeeded(doc, y + 2, 24);
+    y = table(doc, 'Legal and spatial rights (ISO 19152 LADM)', ladm,
+      MARGIN, y, contentW);
+  }
+
   // ---- provenance -------------------------------------------------------
+  y = breakIfNeeded(doc, y, 26);
   y += 3;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
@@ -125,15 +140,42 @@ export async function renderDeed(deed: DeedDoc): Promise<Blob> {
   y = paragraph(doc, deed.datum_note, MARGIN, y + 1, contentW, 3.8);
 
   // ---- footer -----------------------------------------------------------
-  doc.setFontSize(7);
-  doc.setTextColor(...MUTED);
-  doc.text(
-    `Generated ${new Date(deed.issued_at).toISOString().replace('T', ' ').slice(0, 19)} UTC`
-    + ' · not an instrument of title',
-    MARGIN, PAGE.h - 12,
-  );
+  // ON EVERY PAGE, not only the last. The footer carries "not an instrument of
+  // title", and a second page without it would be a page of a
+  // title-document-shaped PDF that does not say what it is -- which is the
+  // failure lib/deed/certificate.ts is written against. Cheap insurance now
+  // that the document can run to two pages.
+  const stamp = `Generated ${new Date(deed.issued_at).toISOString()
+    .replace('T', ' ').slice(0, 19)} UTC · not an instrument of title`;
+  const pages = doc.getNumberOfPages();
+  for (let i = 1; i <= pages; i += 1) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(...MUTED);
+    doc.text(pages > 1 ? `${stamp} · page ${i} of ${pages}` : stamp,
+      MARGIN, PAGE.h - 12);
+  }
 
   return doc.output('blob');
+}
+
+/**
+ * Start a new page if `need` millimetres will not fit below `y`.
+ *
+ * THE DOCUMENT USED TO BE ONE PAGE WITH NO GUARD AT ALL: renderDeed walked a
+ * monotonically increasing y and never called addPage(), so anything past the
+ * bottom margin was written off the sheet and simply did not exist in the
+ * output -- silently, with a valid PDF either side of it. One flat's rights,
+ * bundle and stakeholders are enough to reach that edge, so the guard arrives
+ * with the section that needs it.
+ */
+function breakIfNeeded(
+  doc: import('jspdf').jsPDF, y: number, need: number,
+): number {
+  if (y + need <= PAGE.h - BOTTOM_MARGIN) return y;
+  doc.addPage();
+  return MARGIN;
 }
 
 /** One label/value table. Returns the y after it. */
@@ -152,15 +194,35 @@ function table(
   for (const [k, v] of rows) {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8);
+    // Values can be long (an address, a CRS statement, a bundled asset with
+    // its share), so they wrap into the remaining width rather than running
+    // off the page.
+    const lines = doc.splitTextToSize(v, w - labelW) as string[];
+
+    // BETWEEN ROWS, NOT ONLY BETWEEN TABLES. The ISO 19152 block is the first
+    // section here whose length depends on the data rather than on the layout
+    // -- a holding with a bundle, four rights and three stakeholders is much
+    // longer than one without -- so a guard that only fires before a heading
+    // would still write the tail of a long table off the sheet.
+    const rowH = Math.max(1, lines.length) * 4.2;
+    if (y + rowH > PAGE.h - BOTTOM_MARGIN) {
+      doc.addPage();
+      y = MARGIN;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(...INK);
+      // Continued, so a reader meeting page two knows what they are reading.
+      doc.text(`${heading} (continued)`, x, y);
+      y += 4;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+    }
+
     doc.setTextColor(...MUTED);
     doc.text(k, x, y);
-
     doc.setTextColor(...INK);
-    // Values can be long (an address, a CRS statement), so they wrap into the
-    // remaining width rather than running off the page.
-    const lines = doc.splitTextToSize(v, w - labelW) as string[];
     doc.text(lines, x + labelW, y);
-    y += Math.max(1, lines.length) * 4.2;
+    y += rowH;
   }
   return y;
 }

@@ -263,6 +263,15 @@ export interface LADMParcelDoc {
    * shown as "there is nothing here".
    */
   restricted?: boolean;
+  /**
+   * WHY it was narrowed, in words the panel prints verbatim.
+   *
+   * Carried on the document rather than composed in the viewer, for the same
+   * reason `disclaimer` is: "you may not read this" and "nothing is registered
+   * here" are opposite facts, and the component that renders an empty card
+   * must not be the one deciding which of the two it means.
+   */
+  redaction_note?: string;
   disclaimer: string;
   issued_at: string;
 }

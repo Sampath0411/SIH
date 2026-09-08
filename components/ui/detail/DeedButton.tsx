@@ -4,9 +4,22 @@ import { useEffect, useRef, useState } from 'react';
 import { buildDeed } from '@/lib/deed/certificate';
 import { datumNote } from '@/lib/datum';
 import type { BuildingDetail, Project, UnitInfo } from '@/lib/types';
+import type { LADMParcelDoc } from '@/lib/ladm';
 
 /**
- * "Generate 3D Property Deed" -- the export button on the unit card.
+ * "Export ISO 19152 Certificate" -- the export button on the unit card.
+ *
+ * IT USED TO READ "Generate 3D Property Deed", and the rename is not cosmetic:
+ * the document now carries the LADM classes -- the spatial unit, the bundle it
+ * belongs to, the rights against it and the parties holding them -- and its QR
+ * code resolves to the live ISO 19152 record rather than to the building
+ * document. Calling it a deed while it is a standards-shaped certificate would
+ * undersell what a reader is being handed, and this panel's whole discipline is
+ * that a thing is named what it is.
+ *
+ * STILL ONE BUTTON. A second control beside it would mean two documents about
+ * one volume that could disagree, which is the failure lib/deed/certificate.ts
+ * exists to prevent -- so the existing deed grew the section instead.
  *
  * Sits in the panel BODY, directly under the ULPIN card it exports -- see the
  * comment on the markup below for why it is not in the header.
@@ -51,6 +64,42 @@ export default function DeedButton({
     setBusy(true);
     setError(null);
     try {
+      /*
+       * THE LADM RECORD IS FETCHED HERE, ON CLICK, and never at render.
+       *
+       * Same reasoning as the dynamic import below: most sessions never press
+       * this button, and a request fired on every unit selection to fill a
+       * section of a document nobody asked for is a request nobody asked for.
+       *
+       * A FAILURE IS NOT FATAL. If the endpoint is unreachable, or the volume
+       * predates the registry, the certificate is issued without its ISO
+       * 19152 section rather than not issued at all -- the deed's other
+       * fields come from the cadastre and are still true. Printing the
+       * section as blanks would be the alternative, and that would assert a
+       * holding has no rights.
+       */
+      let ladm: LADMParcelDoc | null = null;
+      if (unit.ulpin) {
+        try {
+          const res = await fetch(
+            `/api/p/${project.slug}/ladm/spatial-unit/${encodeURIComponent(unit.ulpin)}`,
+          );
+          if (res.ok) {
+            const feature = await res.json() as {
+              geometry?: unknown;
+              properties?: { spatial_unit?: unknown } & Record<string, unknown>;
+            };
+            const props = feature.properties;
+            if (props?.spatial_unit) {
+              const { spatial_unit: su, '@class': _cls, ...rest } = props;
+              ladm = { ...rest, su } as unknown as LADMParcelDoc;
+            }
+          }
+        } catch {
+          /* no LADM section on this certificate; see above */
+        }
+      }
+
       const deed = buildDeed({
         unit,
         detail,
@@ -60,6 +109,7 @@ export default function DeedButton({
         kicker,
         titled,
         datumNote: datumNote(project.geoid_sep_m),
+        ladm,
       });
       if (!deed) throw new Error('this volume has no record to print');
 
@@ -125,7 +175,7 @@ export default function DeedButton({
         type="button"
         onClick={onClick}
         disabled={busy}
-        title="Download a PDF deed for this volume: 3D ULPIN, owner, bounding coordinates, volume in m³ and a QR code to the parcel API"
+        title="Download a PDF deed for this volume: 3D ULPIN, owner, bounding coordinates, volume in m³, its ISO 19152 rights and parties, and a QR code to the live LADM record"
         className={[
           'w-full rounded py-1.5 text-[11px] transition-colors',
           busy
@@ -133,7 +183,7 @@ export default function DeedButton({
             : 'bg-[rgb(var(--tint)/0.1)] text-[rgb(var(--ink))] tint-hover',
         ].join(' ')}
       >
-        {busy ? 'Generating deed…' : '↓  Generate 3D Property Deed'}
+        {busy ? 'Generating certificate…' : '↓  Export ISO 19152 Certificate'}
       </button>
       {error ? (
         <p className="mt-1 text-[10px] leading-snug text-[rgb(var(--danger))]">
@@ -141,8 +191,8 @@ export default function DeedButton({
         </p>
       ) : (
         <p className="mt-1 text-[10px] leading-snug text-[rgb(var(--muted))]">
-          PDF with the 3D ULPIN, bounding coordinates, volumetric extent and a
-          QR code to this parcel&rsquo;s API record.
+          PDF with the 3D ULPIN, bounding coordinates, volumetric extent, the
+          ISO 19152 rights and parties, and a QR code to the live LADM record.
         </p>
       )}
     </div>

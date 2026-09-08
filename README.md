@@ -55,6 +55,15 @@ docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1 \
 docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1 \
   -f - < db/migrations/002_cartodem_bhuvan.sql
 docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1   -f - < db/migrations/003_hazard_exposure.sql
+docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1   -f - < db/migrations/004_utility_categories.sql
+docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1   -f - < db/migrations/005_survey_parcel.sql
+docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1   -f - < db/migrations/006_volumetric_units.sql
+docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1   -f - < db/migrations/007_ladm.sql
+# 007 adds the ISO 19152 tables but not the function that fills them: that
+# lives with the other stored functions, and re-applying the file is a no-op
+# for every function that already existed.
+docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1   -f - < db/02_functions.sql
+docker exec -i ulpin-postgis psql -U ulpin -d ulpin   -c "SELECT * FROM ladm_backfill(1);"
 ```
 
 Migration 002 adds the ground-elevation provenance columns and the Bhuvan
@@ -295,6 +304,82 @@ encoding; their agreement is asserted in `lib/ulpin.test.ts`.
 
 ---
 
+## ISO 19152 (LADM)
+
+The schema has described itself as *LADM-inspired* since its second line, and
+the containment hierarchy really does follow LADM: parcel → building → floor →
+unit. What it did not have was the half that hierarchy exists to serve. Rights
+and holders were flat text on the rows they described — `parcel.owner`,
+`unit.owner`, `unit.tenure`, `unit.encumbrance` — so the only join between Flat
+901, its parking bay and its share of the ground was that all three carried the
+same owner **string**. That is not a join: two owners with the same name merge
+into one, and one owner spelled two ways splits into two.
+
+Migration 007 adds the four core classes, plus the membership table that
+carries the share:
+
+| Table | ISO class | What it is |
+|---|---|---|
+| `la_party` | `LA_Party` | a holder, an association, a municipal body, a utility operator, a bank |
+| `la_ba_unit` | `LA_BAUnit` | the administrative record one entity holds |
+| `la_ba_unit_member` | — | which spatial units are in a bundle, **and on what share** |
+| `la_spatial_unit` | `LA_SpatialUnit` | which existing row is a spatial unit |
+| `la_rrr` | `LA_RRR` | a right, restriction or responsibility against a bundle |
+
+Selecting Flat 901 and opening the **Legal** tab answers as one record: the
+volume, Parking Slot P-213 as an appurtenance, and 1/80 of the plot beneath it,
+with the rights, the holder and the tax demand attached.
+
+**The registry stores no geometry.** `la_spatial_unit` records *which* row is a
+spatial unit and points at it; `la_spatial_unit_v` joins the shape back on.
+Migration 006 settled this argument for unit kinds and it holds harder here — a
+duplicated `PolyhedralSurfaceZ` that drifts from its original is a cadastre
+disagreeing with itself about where a property is.
+
+**Both datums, always.** Every `z` here is orthometric (EGM96). EPSG:4979 —
+what a LADM consumer expects of a 3D CRS — is ellipsoidal, and the two are 72 m
+apart at Visakhapatnam. Quoting one and labelling it the other would be an
+error the size of a twenty-storey building that nothing downstream could
+detect, so every payload carries both against their own CRS URNs. Where a
+project records no geoid separation the ellipsoidal pair is **omitted**:
+converting by zero would assert that the geoid and the ellipsoid coincide.
+
+**Rights are redacted like everything else.** `LA_Party` and `LA_RRR` are
+precisely what `filterDetailForCaller` strips from the building document, so
+`filterLadmForCaller` narrows this one server-side — gov and the volume's own
+holder see everything; anyone else sees the spatial unit and the easements over
+it, and is told why. The easements survive deliberately: they name operators,
+never people, and `/api/utilities` already serves the same runs to anyone.
+
+**The flat register stays a file.** Mortgages, tax demands and the parking
+allocation live in `data/projects/<slug>/flat-register.json`, are projected
+into `LA_RRR` on read, and are marked on screen as coming from the register
+rather than the cadastre. Absorbing them into PostGIS would create exactly the
+split-brain `lib/db.ts` describes. The bay allocation is there for the same
+reason it is not a column on the bay: a bay carries no owner because it is not
+separately titled, and who may park in P-213 is a term of the *flat's* title.
+
+**Air rights are derived, not seeded.** Flyover decks and pillars have no row
+in either backend — they are file-sourced specs so they render with the
+database down — so `su_type = 'air_rights'` units are minted from the spec at
+request time and marked `provenance: 'derived'`.
+
+`ladm_backfill(project_id)` fills the tables from what already exists and is
+safe to re-run; re-running it is how the projection is refreshed after a
+re-seed. It invents nothing: every party is a name already on a row, every
+right a tenure or encumbrance string already stored. Where the register is
+silent — a staircase with no holder — the projection is silent too.
+
+Identifiers: `su_id` is the 3D ULPIN wherever one exists. The two kinds that
+have none take a namespaced form under the same revenue prefix —
+`AP-VSP-3D26-UTL-00042` for a corridor, `AP-VSP-3D26-AIR-TTF-P07` for an
+air-rights volume. `ladm_utility_su_id()` and `suIdForUtility()` mint the
+identical string; `lib/ladm.test.ts` holds them to each other, because SQL's
+`lpad()` truncates where `padStart` only pads up and the two disagreed once
+already.
+
+---
+
 ## Architecture
 
 ```
@@ -309,11 +394,15 @@ components/ui/           TopBar, LayerPanel, ActionBar, FloorLadder, ElevationRu
                          DetailPanel, ParcelInset, NavDock, StatusBar, Legend,
                          ConflictBanner, UlpinCard, Provenance, IonNotice
 lib/                     projects.ts, ulpin.ts, store.ts, db.ts, types.ts, bhuvan.ts,
-                         hazard.ts,
-                         api/handlers.ts, data/*, mock/*, cesium/*
+                         hazard.ts, ladm.ts (ISO 19152 classes + mapping),
+                         api/handlers.ts, data/*, mock/*, cesium/*, deed/*
 db/                      01_schema.sql, 02_functions.sql   (run by initdb)
+                         02_functions.sql also holds ladm_backfill(),
+                         ladm_plan_geom(), ladm_utility_su_id()
                          migrations/001_multi_project.sql  (for an existing volume)
-                         migrations/002_cartodem_bhuvan.sql, 003_hazard_exposure.sql
+                         migrations/002_cartodem_bhuvan.sql, 003_hazard_exposure.sql,
+                         004_utility_categories.sql, 005_survey_parcel.sql,
+                         006_volumetric_units.sql, 007_ladm.sql (ISO 19152)
 scripts/                 seed.py orchestrator, 01-05 pipeline, dem.py, hazard.py, project.py,
                          build_geometry.sql, utilities.sql, build_roads.mjs,
                          verify_ui.mjs, check_roads/check_edit/shoot
@@ -425,6 +514,8 @@ than by review.
 | `GET /api/p/:slug/roads` | `/api/roads` | merged street centrelines with names, classes and lengths |
 | `GET /api/projects` | — | every project, with its stats |
 | `GET /api/projects/:slug` | — | one project |
+| `GET /api/p/:slug/ladm/spatial-unit/:suId` | — | the ISO 19152 document for one spatial unit |
+| `GET /api/v1/ladm/parcel/:ulpin3d` | — | the same document, with the project resolved from the identifier |
 
 Two failures are answered differently, and the gallery renders them as
 different states:
@@ -539,7 +630,7 @@ Underground mode pulses them red and names the planted one first.
 ```bash
 npm test            # ULPIN round-trip + SQL-parity assertions, datum, topology
 npm run verify:ui   # drives a real Chrome through all five view modes
-npm run check:volumetric  # interior volumes, retail plan, clash engine, deeds
+npm run check:volumetric  # interior volumes, retail plan, clash engine, LADM, certificates
 npm run check:roads # street picking, tolerance, deselect, building precedence
 npm run check:edit  # read-only guarantees, validation, save, persistence
 npm run check:rwd   # four viewports x two pages: layout, collisions, colour audit
@@ -588,7 +679,22 @@ with an `n/a` line stating why, rather than left permanently red. The
 attribution exemption goes away the moment a card renders map data.
 
 Both suites were run against **PostGIS and the snapshot backend**, and the
-`POST /api/query` stack is byte-identical between them.
+`POST /api/query` stack is byte-identical between them. So is the ISO 19152
+document: `data/api/<slug>/ladm.json` is a dump of the same query
+`lib/db.ts` runs per request, and the two responses were diffed field for field
+with the database stopped.
+
+`check:volumetric` covers the LADM half end to end — the redaction an anonymous
+caller gets, the bundle a government caller gets, both vertical datums and the
+geoid separation between them, the easements resolving under a surface plot,
+the four ISO class names actually appearing in the Legal tab, and the
+certificate carrying all four. It needs a gov cookie for the half that is not
+public:
+
+```bash
+export ULPIN_SESSION_COOKIE=$(node --experimental-strip-types scripts/mint_session.mjs)
+npm run check:volumetric
+```
 
 ### Current state
 
@@ -596,7 +702,10 @@ Both suites were run against **PostGIS and the snapshot backend**, and the
   6,438 units · 301 utility runs · 12 conflicts
 - **hyderabad-banjara** — 2,213 buildings · 1,309 parcels · 350 streets ·
   8,119 floors · 31,807 units · 1,214 utility runs · 80 conflicts
-- `tsc --noEmit` clean, 34/34 unit tests, 46/46 UI checks, 26/26 street checks,
+- **ISO 19152** — 41,574 spatial units · 3,233 BA units · 3,286 rights ·
+  117 parties, backfilled across both projects from what the cadastre already
+  held
+- `tsc --noEmit` clean, 108/108 unit tests, 46/46 UI checks, 26/26 street checks,
   31/31 edit checks, responsive checks green at 1680/1280/834/390 px on both
   the viewer and the gallery
 - The chrome audit reports **0 off-palette elements** at every viewport, and the

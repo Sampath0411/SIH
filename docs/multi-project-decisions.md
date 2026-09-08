@@ -1118,3 +1118,188 @@ all six checks on that frame — the chrome was monochrome, the panels did not
 collide, the attribution was visible and the scene was emphatically in colour.
 Every one of those was true of a view that was wrong. It took looking at the
 screenshot.
+
+## L1 — LADM as a registry over the cadastre, not a second copy of it
+
+The literal reading of "implement `la_spatial_unit` storing 3D volumetric
+geometries" is a table with its own `PolyhedralSurfaceZ` column, populated from
+`unit`, `parcel` and `utility` by a sync pass. That was rejected for the reason
+migration 006 already gave when it refused a parallel table for unit kinds: it
+"would have duplicated the geometry column, the ULPIN uniqueness, the floor FK
+and every reader in lib/db.ts". Here it is worse than duplicated effort — a
+copied solid that drifts from its original is a cadastre that disagrees with
+itself about where a property is, and nothing tells a reader which of the two
+answers is the one a court would take.
+
+So `la_spatial_unit` records WHICH row is a spatial unit (`source_kind` +
+`source_id`) and carries only the figures LADM asks for that the source does
+not hold: the vertical extent, the volume, the dimension. `la_spatial_unit_v`
+joins the geometry back on, and every reader selects from the view, so the
+decision costs a consumer nothing.
+
+`source_id` deliberately carries no foreign key. It is a polymorphic reference
+discriminated by `source_kind` — the same shape `conflict` has always used for
+`a_id`/`b_id`. Four nullable FK columns would leave three NULL on every row and
+still need a CHECK to say which one was meant.
+
+## L2 — project_id is on the registry, though it is not on floor or unit
+
+`01_schema.sql` refuses `project_id` on `floor` and `unit` because it "would
+create a second, de-normalised answer to 'which project is this floor in' that
+nothing enforces agreement between". The operative words are the last five.
+`floor` and `unit` are written by hand, by three different seeders. The
+registry is a PROJECTION with exactly one writer, `ladm_backfill()`, which
+reads the project from the source row every time it runs. There is no second
+writer to disagree with, and without the column every scoped LADM query would
+join `unit -> floor -> building` to recover a number the projection already
+knew.
+
+## L3 — EPSG:4979 is published, not stored
+
+The brief asked for geometry in EPSG:4979. Storage stayed at 4326-with-Z, and
+the reason is that 4979 means ELLIPSOIDAL height while every `z` in this
+database is orthometric — `dem.py` converts CartoDEM's ellipsoidal samples down
+to EGM96 at ingest, and `projects.elev_datum` records that. Declaring the store
+4979 would have been a false statement about 41,574 spatial units, wrong by the
+geoid separation: 72 m at Visakhapatnam, roughly the height of the tallest
+thing in the AOI.
+
+Instead `heightRange()` publishes BOTH, each against its own CRS URN — the
+stored orthometric pair as `EPSG:4326 + EPSG:5773`, and the ellipsoidal pair
+derived through `projects.geoid_sep_m` as `EPSG:4979`. Where a project records
+no separation the ellipsoidal pair is absent rather than defaulted, because
+converting by zero is an assertion that the geoid and the ellipsoid coincide.
+
+The same reasoning keeps `z` out of the GeoJSON coordinates. A reader that
+finds a third ordinate in a position treats it as an ellipsoidal height by
+specification, so publishing the stored value there would mislabel it silently.
+The geometry is the plan ring; the vertical extent is a labelled property.
+
+## L4 — The flat register was not absorbed, and gained a field instead
+
+`la_rrr` could have taken over the mortgage, the tax demand and the title deed
+from `data/projects/<slug>/flat-register.json`. It does not, because
+`lib/db.ts` already argued that case: money has a different record owner and a
+different update cadence from the cadastre, and reading ONE committed file on
+both backends is what stops PostGIS and the snapshot disagreeing about it.
+`rrrFromRegister()` projects those entries into `LA_RRR` on read, and every row
+it produces is marked `from_register` so the panel can say which record is
+speaking.
+
+The parking allocation is new and went into the same file rather than onto the
+bay, and the reason has the same shape. `seed_demo_building.mjs` deliberately
+writes no `owner` on a parking bay: a bay is appurtenant to a flat, not
+separately titled, and inventing a holder for it is the attribution error the
+nullable column exists to prevent. But who may park in P-213 IS recorded
+somewhere — it is a term of the FLAT's title, beside the deed number and the
+charge. So `parking_ulpin` sits in the register, and `getLadmDoc` reads it to
+add the bay to the flat's `LA_BAUnit` as an appurtenant member. Forty bays and
+eighty flats, and that asymmetry is kept rather than smoothed away: half the
+tower has a bay and half does not, so the panel has to render both.
+
+## L5 — Two silent failures, found by making a 2D plot ask a 3D question
+
+Both would have shipped, and neither would have thrown where anyone was
+looking.
+
+`lpad()` TRUNCATES. SQL's `lpad('100000', 5, '0')` returns `'10000'`, where
+JavaScript's `padStart` only ever pads up. `ladm_utility_su_id()` and
+`suIdForUtility()` were written to mint the same string and did not: utility
+100000 and utility 100001 both became `UTL-10000` and collided on the primary
+key. The collision is the good outcome — the bad one is two corridors quietly
+becoming one spatial unit on the snapshot path, where nothing enforces
+uniqueness. `unit_slot()` above it documents the identical trap for flat
+ordinals, which is how the fix was already known.
+
+GEOS REFUSES A POLYHEDRALSURFACE. `ST_Intersects` reports "Unknown geometry
+type: 13", and `::geography` reports "Geography type does not support
+PolyhedralSurface" — and `ST_Force2D` does not help, because the 2D projection
+of a polyhedral surface is still one. The easement query worked for every
+volume and failed only for a surface plot, because on a volume the z-range test
+happened to prune every candidate before the predicate ran. That is a planner
+ordering, not a guarantee. `ladm_plan_geom()` now takes the solid's first face
+— which for every prism `make_prism()` builds is the floor plate — and is
+stated once because three call sites need it and each got it wrong
+independently.
+
+The corridor test is `ST_DWithin` over geography rather than an intersection
+with the envelope, and that is not a weakening: a run's plan footprint IS its
+centreline swept by `radius_m`, so the two describe the same region, one of
+them in metres on the ellipsoid instead of in degrees.
+
+## L6 — Redaction is the feature, not a wrapper around it
+
+A LADM document is the most sensitive payload this application serves.
+`LA_Party` and `LA_RRR` are, precisely and by definition, the holder's name,
+the tenure, the charge and the identifier — the four things
+`filterDetailForCaller` strips from a neighbour's flat. An unfiltered LADM
+endpoint would hand back through a second door exactly what the first one
+refuses, in a tidier shape.
+
+`filterLadmForCaller` narrows it server-side. Gov and the volume's own holder
+see everything; everyone else gets the spatial unit and a sentence saying why
+the rest is missing. Two things survive that narrowing on purpose. The SPATIAL
+UNIT, because it is the shape of a box the viewer is already drawing on screen
+— withholding the m3 of something the user is looking at is theatre. And the
+EASEMENTS, because they name utility operators rather than people, and
+`/api/utilities` already serves the same runs to anyone; stripping them would
+not protect a person, it would only make two endpoints disagree.
+
+`restricted` is set rather than the fields merely being absent, because "not
+yours to read" and "nothing is registered here" are opposite facts and must
+never render as the same empty card.
+
+## L7 — One certificate, renamed, rather than a second button
+
+The brief asked for an "Export ISO 19152 Certificate" button. There was already
+a "Generate 3D Property Deed" one, and adding a second would have meant two
+documents about one volume that could disagree — the failure
+`lib/deed/certificate.ts` was written against, stated in its own header. So the
+existing deed grew the LADM section and the control was renamed, which is
+honest in both directions: the document now carries the four classes and its QR
+resolves to the live ISO 19152 record, so calling it a deed understated it.
+
+The QR target moved from `/api/p/<slug>/building/<id>` to the slug-free
+`/api/v1/ladm/parcel/<ulpin>`, and the slug-free form exists for exactly this
+reason. A certificate is a document somebody keeps; a slug can be renamed; the
+revenue codes cannot, because they ARE the identifier. `/v1` is versioned for
+the same reason — it is the one endpoint here meant for a consumer outside this
+repository, and a consumer outside the repository cannot be migrated by editing
+it.
+
+Two bugs came with the section. `renderDeed` walked a monotonically increasing
+`y` and never called `addPage()`, so anything past the bottom margin was
+written off the sheet — silently, with a valid PDF either side of it. And the
+footer carrying "not an instrument of title" was drawn once, which on a
+two-page document would have left a page of a title-document-shaped PDF that
+does not say what it is. Both are fixed alongside the section that needed them.
+
+## L8 — The tab strip is Sheet.tsx's, and it is the only one that existed
+
+`DetailPanel` had no tabs at all: nine modes, an ordered `if` cascade, every
+hook hoisted above the first early return. The one tablist in the repository is
+the compact bottom sheet, so the new strip copies it exactly — the same roles,
+the same `aria-controls` wiring, the same `is-active` treatment, and panels
+that stay MOUNTED and hidden with the `hidden` attribute rather than being
+unmounted.
+
+Three constraints shaped the labels. They must not be numbers, because
+`verify_ui.mjs` finds floor-ladder rungs by matching any button whose trimmed
+text is `/^(G|[0-9]{1,2}|B[0-9])$/` and takes the first DOM match. They must not
+be "Detail", because in the compact regime this strip is mounted INSIDE the
+sheet's own Detail tab and two buttons reading the same word would make the
+harness ambiguous exactly where both are on screen. And the tab state lives in
+`lib/ui-store.ts` rather than `useViewStore`, because `url-state.ts` serialises
+only deliberate state and which tab a reader has open describes their window,
+not the view.
+
+The ULPIN card and the export control sit ABOVE the strip rather than inside a
+tab. They are true of the volume in either view — this is what the thing is,
+and this is how you take it away — and putting the export inside one tab would
+make it vanish the moment a reader went to look at the rights they were about
+to export.
+
+The LADM request fires on TAB OPEN, not on selection: `LadmTab` is handed a
+null identifier until it is actually showing. Clicking through twenty flats
+costs nothing, which is the same bargain `DeedButton` strikes with its dynamic
+import of the PDF stack.

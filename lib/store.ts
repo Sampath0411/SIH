@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { create } from 'zustand';
+import type { LADMParcelDoc } from './ladm';
 import type { ProviderId, TreatmentId } from './cesium/imagery-catalog';
 import { SUN_DEFAULT_HOUR, SUN_MAX_HOUR, SUN_MIN_HOUR } from './sun';
 import type { BuildingEdit, FieldError } from './data/building-schema';
@@ -792,6 +793,21 @@ export interface DataState {
   /** Full specifications, keyed by site id. Fetched one site at a time. */
   siteSpecs: Record<string, SiteSpec>;
   pendingSites: Record<string, true>;
+  /**
+   * LADM documents, keyed by spatial-unit identifier.
+   *
+   * SMALLER CAP THAN `detail`, and a different shape of thing: a LADM document
+   * is a few kilobytes rather than thirty-five, but it is fetched only when
+   * the Legal tab is actually opened, so the working set is the handful of
+   * volumes a user has inspected the rights on -- not everything they clicked.
+   *
+   * `null` is a CACHED ANSWER, not a miss: it means the server said this
+   * spatial unit is not registered, and re-asking on every render would turn
+   * one 404 into a request per frame.
+   */
+  ladm: Record<string, LADMParcelDoc | null>;
+  ladmOrder: string[];
+  pendingLadm: Record<string, true>;
   detail: Record<number, BuildingDetail>;
   /**
    * Ids in the detail cache, least-recently-used first.
@@ -848,6 +864,9 @@ export interface DataState {
   putSiteSpec: (id: string, spec: SiteSpec) => void;
   beginSite: (id: string) => void;
   endSite: (id: string) => void;
+  putLadm: (suId: string, doc: LADMParcelDoc | null) => void;
+  beginLadm: (suId: string) => void;
+  endLadm: (suId: string) => void;
   putDetail: (id: number, d: BuildingDetail) => void;
   /** Mark a cached document as freshly used, so it is not the next evicted. */
   touchDetail: (id: number) => void;
@@ -874,6 +893,15 @@ export interface DataState {
  */
 const DETAIL_CACHE_LIMIT = 48;
 
+/**
+ * How many LADM documents to keep client-side.
+ *
+ * Bounded for the reason putDetail spells out, at a higher count because the
+ * documents are an order of magnitude smaller -- a spatial unit, a bundle and
+ * a handful of rights, against a building's every floor and unit ring.
+ */
+const LADM_CACHE_LIMIT = 64;
+
 export const useDataStore = create<DataState>((set) => ({
   buildings: null,
   parcels: null,
@@ -887,6 +915,9 @@ export const useDataStore = create<DataState>((set) => ({
   sites: null,
   siteSpecs: {},
   pendingSites: {},
+  ladm: {},
+  ladmOrder: [],
+  pendingLadm: {},
   detail: {},
   detailOrder: [],
   pendingDetail: {},
@@ -934,6 +965,23 @@ export const useDataStore = create<DataState>((set) => ({
   endSite: (id) =>
     set((s) => ({
       pendingSites: (({ [id]: _drop, ...rest }) => rest)(s.pendingSites),
+    })),
+  putLadm: (suId, doc) =>
+    set((s) => {
+      const ladm = { ...s.ladm, [suId]: doc };
+      const order = [...s.ladmOrder.filter((x) => x !== suId), suId];
+      while (order.length > LADM_CACHE_LIMIT) {
+        const evicted = order.shift();
+        if (evicted !== undefined) delete ladm[evicted];
+      }
+      const { [suId]: _drop, ...pending } = s.pendingLadm;
+      return { ladm, ladmOrder: order, pendingLadm: pending };
+    }),
+  beginLadm: (suId) =>
+    set((s) => ({ pendingLadm: { ...s.pendingLadm, [suId]: true as const } })),
+  endLadm: (suId) =>
+    set((s) => ({
+      pendingLadm: (({ [suId]: _drop, ...rest }) => rest)(s.pendingLadm),
     })),
   putDetail: (id, d) =>
     set((s) => {
@@ -1527,4 +1575,101 @@ export function useEnsureSite(id: string | null): SiteSpec | null {
 /** True while this site's specification is in flight. Drives the navigator. */
 export function useSitePending(id: string | null): boolean {
   return useDataStore((s) => (id === null ? false : Boolean(s.pendingSites[id])));
+}
+
+/**
+ * Fetch a spatial unit's ISO 19152 document on demand and cache it.
+ *
+ * FETCHED ON TAB OPEN, NOT ON SELECTION. The caller passes `null` until the
+ * Legal tab is actually showing, so a session that never opens it makes no
+ * LADM request at all -- the same reasoning DeedButton applies to its dynamic
+ * import of the PDF stack. Clicking through twenty flats costs nothing.
+ *
+ * Modelled on useEnsureDetail above, down to the `isCached` boolean selector:
+ * depending on the whole record would make any document landing anywhere
+ * re-run this effect, which fires the cleanup, which aborts the fetch in
+ * flight for the unit the user is actually looking at.
+ *
+ * Writes only to the DATA store, never to the view store, so it does not
+ * break the "layers read, picker and UI write" rule.
+ *
+ * Returns `{ doc, pending }` rather than a bare document, because the panel
+ * has THREE states and one of them is a real empty answer: a spatial unit the
+ * cadastre does not register is not the same as one still loading, and the
+ * card says so in words rather than showing an empty shimmer forever.
+ */
+export function useEnsureLadm(suId: string | null): {
+  doc: LADMParcelDoc | null;
+  pending: boolean;
+} {
+  const ladm = useDataStore((s) => s.ladm);
+  const isCached = useDataStore((s) => suId !== null && suId in s.ladm);
+  const pending = useDataStore((s) => (suId === null ? false : Boolean(s.pendingLadm[suId])));
+  const slug = useViewStore((s) => s.projectSlug);
+
+  useEffect(() => {
+    if (suId === null || slug === null) return undefined;
+    if (isCached) return undefined;
+    if (useDataStore.getState().pendingLadm[suId]) return undefined;
+    useDataStore.getState().beginLadm(suId);
+
+    const abort = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/p/${slug}/ladm/spatial-unit/${encodeURIComponent(suId)}`,
+          { signal: abort.signal },
+        );
+        if (res.status === 404) {
+          // A REAL ANSWER, and cached as one. This spatial unit is not in the
+          // registry -- a project seeded before migration 007, or a volume the
+          // backfill does not cover. Re-asking on every render would turn one
+          // 404 into a request per frame.
+          useDataStore.getState().putLadm(suId, null);
+          return;
+        }
+        if (!res.ok) return;
+        const doc = (await res.json()) as {
+          properties?: { spatial_unit?: unknown };
+        } & Record<string, unknown>;
+        const parsed = ladmFromFeature(doc);
+        if (parsed) useDataStore.getState().putLadm(suId, parsed);
+      } catch {
+        /* aborted, or transient: the tab reports the failure and stays usable */
+      } finally {
+        useDataStore.getState().endLadm(suId);
+      }
+    })();
+
+    return () => {
+      if (!(suId in useDataStore.getState().ladm)) abort.abort();
+    };
+  }, [suId, slug, isCached]);
+
+  return {
+    doc: suId === null ? null : ladm[suId] ?? null,
+    pending,
+  };
+}
+
+/**
+ * Unwrap the GeoJSON Feature the endpoint serves back into a LADMParcelDoc.
+ *
+ * The wire format is a Feature -- geometry beside properties -- because that
+ * is what a standards-shaped endpoint should serve to a consumer outside this
+ * repository. The viewer wants the document. This is the one place the two
+ * shapes are reconciled, and it is here rather than on the server because the
+ * server's job is the standard, not this panel's convenience.
+ */
+function ladmFromFeature(feature: Record<string, unknown>): LADMParcelDoc | null {
+  const props = feature.properties as Record<string, unknown> | undefined;
+  if (!props) return null;
+  const su = props.spatial_unit as Record<string, unknown> | undefined;
+  if (!su) return null;
+  const geometry = feature.geometry as LADMParcelDoc['su']['ring'] | null;
+  const { spatial_unit: _drop, '@class': _cls, ...rest } = props;
+  return {
+    ...(rest as unknown as Omit<LADMParcelDoc, 'su'>),
+    su: { ...(su as unknown as LADMParcelDoc['su']), ...(geometry ? { ring: geometry } : {}) },
+  };
 }

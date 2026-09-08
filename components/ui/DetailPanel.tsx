@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { useDataStore, useDetailPending, useEditStore, useEnsureDetail, useViewStore, useBuildingNeighbours, useBuildingConflicts, useParcelSiblings, useEnsureLulc, useLulcPending, useEnsureSite, useEnsureSurveyParcelDetail } from '@/lib/store';
+import { useUiStore } from '@/lib/ui-store';
 import { componentForRef } from '@/components/layers/InfraSiteLayer';
 import { LULC_SOURCE_SHORT, lulcClassLabel } from '@/lib/bhuvan';
 import { RISK_HEX } from '@/lib/cesium/materials';
@@ -20,6 +21,8 @@ interface ViewTopology {
 import BuildingEditForm from './detail/BuildingEditForm';
 import UnsavedBanner from './detail/UnsavedBanner';
 import DeedButton from './detail/DeedButton';
+import DetailTabs from './detail/DetailTabs';
+import LadmTab from './detail/LadmTab';
 import { ROAD_CLASS_LABEL, utilityAssetLabel } from '@/lib/cesium/materials';
 import {
   UNDERGROUND_BY_KEY, categoryOfAssetType,
@@ -44,7 +47,18 @@ import { DERIVED_PARCEL_NOTE, MOCK_BUILDING_NOTE, ProvenanceRow } from './Proven
  * thing this application draws and almost none of it is surveyed.
  */
 
-function Row({
+/*
+ * Row, SourceChip, Section and SkeletonBar are EXPORTED, unlike the rest of
+ * the locals in this file.
+ *
+ * components/ui/detail/LadmTab.tsx renders inside this panel and must be
+ * typographically indistinguishable from it -- same label/value baseline, same
+ * divider, same source chip, same shimmer. Copying four small components to
+ * avoid an export is how two things that must look identical stop looking
+ * identical, which is the argument this codebase makes about duplicated
+ * arithmetic applied to duplicated markup.
+ */
+export function Row({
   label,
   value,
   source,
@@ -73,7 +87,7 @@ function Row({
 }
 
 /** Marks a single value as mapped fact or as a demonstration value. */
-function SourceChip({
+export function SourceChip({
   source,
 }: {
   source: 'osm_tag' | 'generated' | 'derived' | 'bhuvan' | 'reference';
@@ -141,7 +155,7 @@ function RiskChip({ cls }: { cls: RiskClass }) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+export function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mt-2 border-t border-[rgb(var(--edge))]/50 pt-2">
       <div className="panel-title">{title}</div>
@@ -317,7 +331,7 @@ function ParcelTree({
  * with a taller line box than this 10px bar, so the row height is governed by
  * the label either way and the swap to real content shifts nothing.
  */
-function SkeletonBar({ w = 'w-20' }: { w?: string }) {
+export function SkeletonBar({ w = 'w-20' }: { w?: string }) {
   return <span className={`skeleton inline-block h-[10px] rounded align-middle ${w}`} />;
 }
 
@@ -542,6 +556,10 @@ export default function DetailPanel() {
   const selectSite = useViewStore((s) => s.selectSite);
   const clearAmbient = useViewStore((s) => s.clearAmbient);
   const selectedRoadId = useViewStore((s) => s.selectedRoadId);
+  // Which tab the panel is showing. In lib/ui-store.ts, not useViewStore:
+  // lib/url-state.ts serialises only DELIBERATE state, and which tab a reader
+  // happens to have open describes this window rather than the view.
+  const detailTab = useUiStore((s) => s.detailTab);
   const underground = useViewStore((s) => s.underground);
   const session = useViewStore((s) => s.session);
   // The deed prints the project's slug into its QR target and its geoid
@@ -1109,6 +1127,27 @@ export default function DetailPanel() {
             titled={kindInfo.titled}
           />
 
+          {/*
+            THE STRIP SITS UNDER THE IDENTIFIER AND THE EXPORT, not above
+            them. The ULPIN and the deed button are true of the volume in
+            either tab -- they are what this thing IS and how you take it
+            away -- so putting them inside a tab would make the export
+            disappear when a reader went to look at the rights they were
+            about to export.
+
+            Both panels stay MOUNTED and are hidden with the `hidden`
+            attribute, which is Sheet.tsx's idiom: unmounting would re-run
+            the effects behind them, and `hidden` also keeps the inactive
+            text out of innerText, which is what the acceptance harness
+            reads.
+          */}
+          <DetailTabs />
+
+          <div
+            id="detail-panel-details"
+            role="tabpanel"
+            hidden={detailTab !== 'details'}
+          >
           {/* The three answers a holder opens this panel for, ahead of any of
               the rows: is it mine outright, is the tax settled, do I owe
               anyone this month. Red is the only hue in this palette and it is
@@ -1358,6 +1397,21 @@ export default function DetailPanel() {
               + 'thing, sourced from nothing. No figure here is quotable.'
             }
           />
+          </div>
+
+          <div
+            id="detail-panel-ladm"
+            role="tabpanel"
+            hidden={detailTab !== 'ladm'}
+          >
+            {/*
+              `suId` is null until the tab is actually showing, which is what
+              makes the LADM request happen on tab OPEN rather than on
+              selection. Clicking through twenty flats costs nothing; the one
+              a reader asks about costs one request.
+            */}
+            <LadmTab suId={detailTab === 'ladm' ? unit.ulpin ?? null : null} />
+          </div>
         </Panel>
       );
     }

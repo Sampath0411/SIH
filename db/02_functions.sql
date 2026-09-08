@@ -217,6 +217,35 @@ LANGUAGE sql IMMUTABLE AS $fn$
 $fn$;
 
 
+-- The 2-D PLAN geometry of a spatial unit, whatever its source stores.
+--
+-- WHY THIS EXISTS AT ALL. GEOS and the geography type both refuse a
+-- POLYHEDRALSURFACE outright -- "Unknown geometry type: 13" from ST_Intersects,
+-- "Geography type does not support PolyhedralSurface" from a ::geography cast
+-- -- and ST_Force2D does NOT help, because the 2-D projection of a polyhedral
+-- surface is still a polyhedral surface. Every solid this schema stores is a
+-- vertical prism built by make_prism(), whose FIRST face is the floor plate, so
+-- taking that face is an exact plan footprint rather than an approximation.
+--
+-- Stated once, here, because three callers need it and each of them failed
+-- differently when they did it themselves: the ring on the LADM document, the
+-- easement predicate in lib/db.ts, and the same predicate in
+-- scripts/05_export_static.py. The two predicates failed only for a 2-D
+-- surface plot -- on a volume the z-range test happened to prune every
+-- candidate before the geometry was touched -- which is exactly the kind of
+-- planner-order accident that reaches production.
+CREATE OR REPLACE FUNCTION ladm_plan_geom(g geometry)
+RETURNS geometry
+LANGUAGE sql IMMUTABLE AS $fn$
+  SELECT CASE
+           WHEN g IS NULL THEN NULL
+           WHEN GeometryType(g) = 'POLYHEDRALSURFACE'
+             THEN ST_Force2D(ST_GeometryN(g, 1))
+           ELSE ST_Force2D(g)
+         END;
+$fn$;
+
+
 -- ---------------------------------------------------------- ladm_backfill
 -- Project one project's cadastre into the LADM classes.
 --

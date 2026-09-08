@@ -113,6 +113,105 @@ SELECT json_build_object(
 FROM utility u WHERE u.project_id = {SCOPE};
 """
 
+
+# The ISO 19152 (LADM) registry, keyed by spatial-unit identifier.
+#
+# MIRRORS ladmSql() in lib/db.ts field for field. That function builds this
+# same document for ONE su_id at request time against PostGIS; this dumps every
+# one of them so the snapshot backend can answer identically with the database
+# down. The two must not drift -- a LADM tab that says one thing on Vercel and
+# another on a developer's machine is worse than one that says nothing -- so
+# when you change one of these queries, change the other.
+#
+# THE RING IS EXPORTED, unlike floors and units elsewhere in this file. Those
+# are drawn by Cesium, which extrudes a polygon between two heights and needs
+# only ring + z extent. This document is served as a GeoJSON Feature to
+# consumers outside this repository, and a Feature with a null geometry is not
+# one. It costs about 120 bytes a row against a detail.json that is already
+# 17 MB.
+#
+# `easements` is the one genuinely expensive part: a spatial join of every
+# spatial unit against every utility run. It is bounded by the && bbox
+# prefilter, which the 2-D index on utility.geom_3d serves, and it runs once
+# per export rather than once per request.
+LADM = f"""
+SELECT COALESCE(json_object_agg(x.su_id, x.doc), '{{}}'::json) FROM (
+  SELECT s.su_id, json_build_object(
+    'su', json_build_object(
+      'su_id', s.su_id, 'su_type', s.su_type, 'dimension', s.dimension,
+      'source_kind', s.source_kind, 'source_id', s.source_id,
+      'provenance', s.provenance,
+      'z_min', s.z_min, 'z_max', s.z_max, 'volume_m3', s.volume_m3,
+      'label', COALESCE(u.label, u.unit_no, 'Plot ' || s.su_id),
+      'ring', ST_AsGeoJSON(ladm_plan_geom(s.geom_3d), 7)::json),
+
+    'ba_unit', (SELECT json_build_object(
+        'ba_unit_id', ba.ba_unit_id, 'ba_ulpin', ba.ba_ulpin,
+        'name', ba.name, 'ba_type', ba.ba_type, 'ulpin_14', ba.ulpin_14,
+        'members', COALESCE((
+           SELECT json_agg(json_build_object(
+                    'su_id', m.su_id, 'member_role', m.member_role,
+                    'share_num', m.share_num, 'share_den', m.share_den,
+                    'su_type', ms.su_type,
+                    'label', COALESCE(mu.label, mu.unit_no, 'Plot ' || m.su_id))
+                  ORDER BY m.member_role, m.su_id)
+             FROM la_ba_unit_member m
+             JOIN la_spatial_unit ms ON ms.su_id = m.su_id
+             LEFT JOIN unit mu ON ms.source_kind = 'unit' AND mu.id = ms.source_id
+            WHERE m.ba_unit_id = ba.ba_unit_id), '[]'::json))
+      FROM la_ba_unit_member pm
+      JOIN la_ba_unit ba ON ba.ba_unit_id = pm.ba_unit_id
+     WHERE pm.su_id = s.su_id AND pm.member_role = 'principal'
+     LIMIT 1),
+
+    'rrrs', COALESCE((
+        SELECT json_agg(json_build_object(
+                 'rrr_id', r.rrr_id, 'rrr_class', r.rrr_class,
+                 'rrr_type', r.rrr_type,
+                 'share_num', r.share_num, 'share_den', r.share_den,
+                 'time_spec_from', to_char(r.time_spec_from, 'YYYY-MM-DD'),
+                 'time_spec_to', to_char(r.time_spec_to, 'YYYY-MM-DD'),
+                 'amount_inr', r.amount_inr, 'reference', r.reference,
+                 'description', r.description,
+                 'party', CASE WHEN pa.party_id IS NULL THEN NULL ELSE
+                            json_build_object('party_id', pa.party_id,
+                              'name', pa.name, 'party_type', pa.party_type,
+                              'role', pa.role,
+                              'authority_code', pa.authority_code) END)
+               ORDER BY r.rrr_class, r.rrr_id)
+          FROM la_ba_unit_member pm
+          JOIN la_rrr r ON r.ba_unit_id = pm.ba_unit_id
+          LEFT JOIN la_party pa ON pa.party_id = r.party_id
+         WHERE pm.su_id = s.su_id AND pm.member_role = 'principal'), '[]'::json),
+
+    'easements', COALESCE((
+        SELECT json_agg(json_build_object(
+                 'su_id', es.su_id,
+                 'label', initcap(ut.asset_type) || ' corridor '
+                          || COALESCE(ut.ref, ut.id::text),
+                 'z_min', es.z_min, 'z_max', es.z_max,
+                 'authority', ut.authority, 'asset_type', ut.asset_type,
+                 'description', er.description)
+               ORDER BY es.su_id)
+          FROM la_spatial_unit es
+          JOIN utility ut ON ut.id = es.source_id
+          LEFT JOIN la_ba_unit eb ON eb.ba_ulpin = es.su_id || '-BA'
+          LEFT JOIN la_rrr er ON er.ba_unit_id = eb.ba_unit_id
+                             AND er.rrr_type = 'easement'
+         WHERE es.project_id = s.project_id AND es.source_kind = 'utility'
+           AND ST_Force2D(ut.geom_3d)
+               && ST_Expand(ladm_plan_geom(s.geom_3d), 0.00006)
+           AND ST_DWithin(ST_Force2D(ut.geom_3d)::geography,
+                          ladm_plan_geom(s.geom_3d)::geography, ut.radius_m)
+           AND (s.z_min IS NULL
+                OR (es.z_min <= s.z_max AND s.z_min <= es.z_max))), '[]'::json)
+  ) AS doc
+  FROM la_spatial_unit_v s
+  LEFT JOIN unit u ON s.source_kind = 'unit' AND u.id = s.source_id
+  WHERE s.project_id = {SCOPE}
+) x;
+"""
+
 CONFLICTS = f"""
 SELECT COALESCE(json_agg(json_build_object(
   'id', c.id, 'kind', c.kind, 'detected_at', c.detected_at,
@@ -253,6 +352,14 @@ def main():
     dump(out, "utilities.json", UTILITIES)
     dump(out, "conflicts.json", CONFLICTS)
     dump(out, "detail.json", DETAIL)
+    # Skipped, not fatal, when the LADM tables are absent: a volume that
+    # predates migration 007 still exports every other file, and the LADM
+    # tab reports that this project has no registry rather than the whole
+    # export failing over a table the pipeline does not otherwise need.
+    try:
+        dump(out, "ladm.json", LADM)
+    except Exception as exc:  # noqa: BLE001 -- see above
+        print(f"  ladm.json         skipped ({exc})")
 
     stats = json.loads(pg.scalar(STATS))
     stats["streets"] = street_count(out)

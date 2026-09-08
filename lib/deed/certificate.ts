@@ -19,6 +19,10 @@
  */
 import type { BuildingDetail, UnitInfo } from '../types.ts';
 import { DISCLAIMER, levelLabel } from '../ulpin.ts';
+import {
+  formatShare, memberRoleLabel, partyRoleLabel, rrrTypeLabel, suTypeLabel,
+  type LADMParcelDoc,
+} from '../ladm.ts';
 
 /** The bounding box a deed quotes: plan extent plus the vertical span. */
 export interface DeedBounds {
@@ -64,6 +68,17 @@ export interface DeedDoc {
   /** Plan centroid, for the one-line coordinate the deed quotes. */
   centre: { lon: number; lat: number };
 
+  /**
+   * The ISO 19152 record, when the caller supplied one.
+   *
+   * OPTIONAL, AND ABSENT RATHER THAN EMPTY. A project seeded before the LADM
+   * tables existed has no registry rows, and a certificate for one of its
+   * volumes must print no LADM section at all -- not a section of blanks,
+   * which would read as "registered, with nothing recorded" instead of "not
+   * in the registry". Same rule as every other field on this document.
+   */
+  ladm?: DeedLadm;
+
   /** Absolute URL of the parcel API endpoint the QR code resolves to. */
   api_url: string;
   /** Vertical datum of every z on the document. */
@@ -87,6 +102,37 @@ function ringBounds(ring: number[][]) {
   return { lon_min, lat_min, lon_max, lat_max };
 }
 
+/**
+ * The LADM half of the certificate.
+ *
+ * Flattened to strings HERE rather than in the renderer, so that the deed and
+ * the panel quote the same wording for the same class -- both go through
+ * lib/ladm.ts's label functions -- and so that this module stays the single
+ * source for what a deed says.
+ */
+export interface DeedLadm {
+  su_id: string;
+  su_type: string;
+  dimension: string;
+  provenance: string;
+  /** The stored, orthometric extent. Always present on a 3D unit. */
+  z_msl?: { z_min: number; z_max: number };
+  /** EPSG:4979. Absent where the project records no geoid separation. */
+  z_ellipsoidal?: { z_min: number; z_max: number };
+  geoid_separation_m?: number;
+  ba_ulpin?: string;
+  ba_name?: string;
+  ba_type?: string;
+  /** 'Flat 901 — principal — 1', one line per bundled asset. */
+  members: string[];
+  /** 'Ownership (right) — Rajesh Gupta — DOC/2023/VSP/41730'. */
+  rrrs: string[];
+  /** 'Title holder — Rajesh Gupta'. */
+  parties: string[];
+  /** 'Sewer corridor 99002 · GVMC Sewerage Board'. */
+  easements: string[];
+}
+
 export interface DeedInput {
   unit: UnitInfo;
   detail: BuildingDetail;
@@ -101,6 +147,15 @@ export interface DeedInput {
   titled: boolean;
   /** Vertical-datum sentence, from lib/datum.ts. */
   datumNote: string;
+  /**
+   * The volume's LADM document, if the caller fetched one.
+   *
+   * PASSED IN rather than fetched here, because this module is pure -- it is
+   * loaded by `node --test` and by scripts/check_volumetric.mjs with no
+   * server in reach. DeedButton does the fetch, on click, for the same reason
+   * it defers the PDF stack: most sessions never press it.
+   */
+  ladm?: LADMParcelDoc | null;
 }
 
 /**
@@ -167,8 +222,22 @@ export function buildDeed(input: DeedInput): DeedDoc | null {
     // over a deep link to the unit because it is the resource that actually
     // exists and answers: /building/<id> serves the whole stack, this volume
     // included, on both backends.
-    api_url: `${origin.replace(/\/+$/, '')}/api/p/${slug}/building/${b.id}`,
+    // THE QR RESOLVES TO THE LADM RECORD, not to the building document.
+    //
+    // /api/v1/ladm/parcel/<ulpin> is slug-free on purpose: it resolves the
+    // project from the revenue codes inside the identifier, and this is a
+    // document somebody keeps. A slug can be renamed; AP-VSP-3D26 cannot,
+    // because it IS the identifier. A deed whose QR code stops resolving the
+    // day an AOI is renamed is a deed that lied about being durable.
+    //
+    // Falls back to the building endpoint for a redacted volume with no
+    // identifier to address -- which buildDeed refuses to issue anyway, so
+    // this is the second gate agreeing with the first.
+    api_url: unit.ulpin
+      ? `${origin.replace(/\/+$/, '')}/api/v1/ladm/parcel/${unit.ulpin}`
+      : `${origin.replace(/\/+$/, '')}/api/p/${slug}/building/${b.id}`,
     datum_note: input.datumNote,
+    ...(input.ladm ? { ladm: deedLadmOf(input.ladm) } : {}),
     provenance: provenanceLine(floor?.detect_source, b.survey_synthetic),
     disclaimer: DISCLAIMER,
     issued_at: new Date().toISOString(),
@@ -236,4 +305,112 @@ export function deedBoundsRows(d: DeedDoc): [string, string][] {
     ['Centroid', `${d.centre.lat.toFixed(6)}, ${d.centre.lon.toFixed(6)}`],
     ['CRS', 'EPSG:4326 (WGS 84), heights EPSG:5773 (EGM96)'],
   ];
+}
+
+/**
+ * Flatten a LADM document into the lines the certificate prints.
+ *
+ * EVERY LABEL COMES FROM lib/ladm.ts, not from a second table of wording here.
+ * The panel and the deed must call the same right by the same name, or a
+ * reader comparing the screen to the printout finds two documents describing
+ * one holding differently.
+ *
+ * A REDACTED DOCUMENT CONTRIBUTES NOTHING. The server narrows a LADM payload
+ * for a caller who may not read it (filterLadmForCaller), and buildDeed
+ * already refuses a restricted unit outright -- but if a narrowed document
+ * ever reached here, printing its empty rights list under the heading "Legal
+ * and spatial rights" would state that a holding has none. So it returns
+ * undefined and the section is omitted, which is the third gate agreeing with
+ * the first two.
+ */
+function deedLadmOf(doc: LADMParcelDoc): DeedLadm | undefined {
+  if (doc.restricted) return undefined;
+  const su = doc.su;
+  const out: DeedLadm = {
+    su_id: su.su_id,
+    su_type: suTypeLabel(su.su_type),
+    dimension: su.dimension,
+    provenance: su.provenance,
+    members: [],
+    rrrs: [],
+    parties: [],
+    easements: [],
+  };
+  if (su.height) {
+    out.z_msl = su.height.msl;
+    if (su.height.ellipsoidal) out.z_ellipsoidal = su.height.ellipsoidal;
+    if (su.height.geoid_separation_m !== undefined) {
+      out.geoid_separation_m = su.height.geoid_separation_m;
+    }
+  }
+  if (doc.ba_unit) {
+    out.ba_ulpin = doc.ba_unit.ba_ulpin;
+    out.ba_name = doc.ba_unit.name;
+    out.ba_type = doc.ba_unit.ba_type === 'condominium_unit'
+      ? 'Condominium unit' : 'Basic administrative unit';
+    out.members = doc.ba_unit.members.map((m) =>
+      `${m.label ?? m.su_id} — ${memberRoleLabel(m.member_role)} — `
+      + `share ${formatShare(m.share)}`);
+  }
+  out.rrrs = doc.rrrs.map((r) => {
+    const bits = [`${rrrTypeLabel(r.rrr_type)} (${r.rrr_class})`];
+    if (r.party) bits.push(r.party.name);
+    if (r.reference) bits.push(r.reference);
+    return bits.join(' — ');
+  });
+  out.parties = doc.parties.map((p) =>
+    `${partyRoleLabel(p.role)} — ${p.name}`
+    + (p.authority_code ? ` (${p.authority_code})` : ''));
+  out.easements = doc.easements.map((e) => e.label ?? e.su_id);
+  return out;
+}
+
+/**
+ * The LADM rows a certificate prints, in order, skipping anything absent.
+ *
+ * Beside deedRows and deedBoundsRows, and for the same reason: the renderer
+ * lays out tables and does not decide what goes in them.
+ */
+export function ladmRows(d: DeedDoc): [string, string][] {
+  const l = d.ladm;
+  if (!l) return [];
+  const rows: [string, string][] = [];
+  const push = (k: string, v: string | undefined | null) => {
+    if (v !== undefined && v !== null && v !== '') rows.push([k, v]);
+  };
+  push('ISO 19152 class', 'LA_SpatialUnit');
+  push('Spatial unit id', l.su_id);
+  push('Spatial unit type', `${l.su_type} (${l.dimension})`);
+  push('Provenance', l.provenance);
+  if (l.z_msl) {
+    push('Z extent (EGM96 MSL)',
+      `${l.z_msl.z_min.toFixed(2)} m to ${l.z_msl.z_max.toFixed(2)} m`);
+  }
+  if (l.z_ellipsoidal) {
+    push('Z extent (EPSG:4979)',
+      `${l.z_ellipsoidal.z_min.toFixed(2)} m to `
+      + `${l.z_ellipsoidal.z_max.toFixed(2)} m`);
+  }
+  if (l.geoid_separation_m !== undefined) {
+    push('Geoid separation', `${l.geoid_separation_m.toFixed(2)} m`);
+  }
+  if (l.ba_ulpin) {
+    push('ISO 19152 class ', 'LA_BAUnit');
+    push('Legal unit', l.ba_name);
+    push('Legal unit id', l.ba_ulpin);
+    push('Legal unit type', l.ba_type);
+  }
+  l.members.forEach((m, i) => push(i === 0 ? 'Bundled assets' : '', m));
+  if (l.rrrs.length) {
+    push('ISO 19152 class  ', 'LA_RRR');
+    l.rrrs.forEach((r, i) => push(i === 0 ? 'Rights' : '', r));
+  }
+  if (l.parties.length) {
+    push('ISO 19152 class   ', 'LA_Party');
+    l.parties.forEach((p, i) => push(i === 0 ? 'Stakeholders' : '', p));
+  }
+  if (l.easements.length) {
+    l.easements.forEach((e, i) => push(i === 0 ? 'Easements' : '', e));
+  }
+  return rows;
 }

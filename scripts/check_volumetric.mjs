@@ -84,6 +84,111 @@ check('every finding carries coordinates and a Z',
 check('a building own plumbing is not reported against it',
   !topo.findings.some((f) => /9900[123]/.test(f.a.label)));
 
+// ---------------------------------------------------------------- LADM -----
+// The ISO 19152 half. Asserted against the API rather than the tables, because
+// the API is what both backends have to agree on and what the panel and the
+// certificate both read.
+console.log('\n[3b] ISO 19152 (LADM)');
+const FLAT_901 = 'AP-VSP-3D26-9999-001-09-901';
+let ladm901 = null;
+{
+  const url = (id) => `${ORIGIN}/api/p/${SLUG}/ladm/spatial-unit/${id}`;
+
+  // ANON FIRST, and the redaction is the assertion. This payload carries
+  // holder names and charges -- exactly what filterDetailForCaller strips from
+  // the building document -- so serving it unfiltered would hand back through
+  // a second door what the first one refuses.
+  const anon = await fetch(url(FLAT_901)).then((r) => r.json());
+  check('LADM: anon gets the spatial unit',
+    anon?.properties?.spatial_unit?.su_id === FLAT_901);
+  check('LADM: anon is told the rights are withheld',
+    anon?.properties?.restricted === true
+    && typeof anon?.properties?.redaction_note === 'string');
+  check('LADM: anon gets no parties and no rights',
+    (anon?.properties?.parties ?? []).length === 0
+    && (anon?.properties?.rrrs ?? []).length === 0);
+
+  // Gov sees the whole record.
+  const cookie = process.env.ULPIN_SESSION_COOKIE
+    ? { cookie: `ulpin_session=${process.env.ULPIN_SESSION_COOKIE}` }
+    : null;
+  if (!cookie) {
+    console.log('  ..    LADM gov checks skipped '
+      + '(set ULPIN_SESSION_COOKIE from scripts/mint_session.mjs)');
+  } else {
+    ladm901 = await fetch(url(FLAT_901), { headers: cookie }).then((r) => r.json());
+    const p = ladm901.properties;
+    const su = p.spatial_unit;
+    check('LADM: the spatial unit is a 3D multi-storey volume',
+      su.su_type === 'multi_storey' && su.dimension === '3D');
+    check('LADM: it quotes a volumetric extent in m3',
+      typeof su.volume_m3 === 'number' && su.volume_m3 > 0, String(su.volume_m3));
+
+    // BOTH DATUMS, and they must actually differ. Publishing the orthometric
+    // numbers under an EPSG:4979 label would be a 72 m error at this latitude
+    // that nothing downstream could detect.
+    check('LADM: the height range is published in MSL',
+      Number.isFinite(su.height?.msl?.z_min));
+    check('LADM: and in ellipsoidal EPSG:4979',
+      Number.isFinite(su.height?.ellipsoidal?.z_min)
+      && su.height.ellipsoidal_crs.includes('4979'));
+    check('LADM: the two datums differ by the geoid separation',
+      Math.abs((su.height.msl.z_min - su.height.ellipsoidal.z_min)
+        + su.height.geoid_separation_m) < 1e-6);
+    check('LADM: the span is identical in both datums',
+      Math.abs((su.height.msl.z_max - su.height.msl.z_min)
+        - (su.height.ellipsoidal.z_max - su.height.ellipsoidal.z_min)) < 1e-9);
+
+    // THE BUNDLE. This is the requirement in one assertion: a flat, its
+    // parking bay and its undivided share of the ground as ONE record.
+    const roles = (p.ba_unit?.members ?? []).map((m) => m.member_role);
+    check('LADM: the flat is the principal member of a BA unit',
+      p.ba_unit?.ba_type === 'condominium_unit' && roles.includes('principal'));
+    check('LADM: its parking bay is bundled as appurtenant',
+      roles.includes('appurtenant'),
+      (p.ba_unit?.members ?? []).map((m) => m.su_id).join(', '));
+    const share = (p.ba_unit?.members ?? [])
+      .find((m) => m.member_role === 'undivided_share')?.share;
+    check('LADM: it carries an undivided share of the surface plot',
+      share?.num === 1 && share?.den === 80, JSON.stringify(share));
+
+    check('LADM: rights and parties are served to gov',
+      p.rrrs.length > 0 && p.parties.length > 0);
+    check('LADM: the property tax demand id is on the record',
+      p.rrrs.some((r) => r.rrr_type === 'tax_demand' && /GVMC/.test(r.reference ?? '')));
+
+    // A SURFACE PLOT. 2D, no invented height, and the corridors under it
+    // resolved on request -- which is the query that used to die on GEOS,
+    // silently, because a volume's z-range pruned it first.
+    const plot = await fetch(url('AP-VSP-3D26-9999'), { headers: cookie })
+      .then((r) => r.json());
+    check('LADM: a surface plot is 2D with no invented height',
+      plot.properties.spatial_unit.dimension === '2D'
+      && plot.properties.spatial_unit.height === undefined);
+    check('LADM: subterranean easements resolve under the plot',
+      plot.properties.easements.length > 0,
+      `${plot.properties.easements.length} corridors`);
+
+    // An identifier that is not one at all is a 400, not a 404 or a 500.
+    const bad = await fetch(url('not-an-identifier'));
+    check('LADM: a malformed identifier is refused with 400', bad.status === 400,
+      String(bad.status));
+
+    // The slug-free public form resolves the project from the identifier --
+    // the URL the certificate's QR code carries.
+    const v1 = await fetch(`${ORIGIN}/api/v1/ladm/parcel/${FLAT_901}`,
+      { headers: cookie }).then((r) => r.json());
+    check('LADM: /api/v1 resolves the project from the identifier alone',
+      v1?.properties?.spatial_unit?.su_id === FLAT_901);
+
+    // And the JSON-LD framing names the ISO classes.
+    const ld = await fetch(`${ORIGIN}/api/v1/ladm/parcel/${FLAT_901}?format=jsonld`,
+      { headers: cookie }).then((r) => r.json());
+    check('LADM: JSON-LD is framed as LA_SpatialUnit',
+      ld['@type'] === 'LA_SpatialUnit' && ld.baUnit?.['@type'] === 'LA_BAUnit');
+  }
+}
+
 // ---------------------------------------------------------------- deed -----
 // Exercised in Node rather than in the page: buildDeed is pure, and jspdf and
 // qrcode both run headless, so the PDF can be produced and inspected without
@@ -92,7 +197,7 @@ check('a building own plumbing is not reported against it',
 // volume with no register does not get a holder invented for it.
 console.log('\n[4] Deed export');
 {
-  const { buildDeed } = await import('../lib/deed/certificate.ts');
+  const { buildDeed, ladmRows } = await import('../lib/deed/certificate.ts');
   const { renderDeed, deedFilename } = await import('../lib/deed/pdf.ts');
   const { datumNote } = await import('../lib/datum.ts');
   const projects = await fetch(`${ORIGIN}/api/projects`).then((r) => r.json());
@@ -128,11 +233,63 @@ console.log('\n[4] Deed export');
       /Not an official government identifier/.test(deed.disclaimer));
     check(`deed: ${label} states its provenance`,
       typeof deed.provenance === 'string' && deed.provenance.length > 20);
-    check(`deed: ${label} QR targets the parcel API`,
-      deed.api_url.endsWith(`/api/p/${SLUG}/building/${detail.building.id}`));
+    check(`deed: ${label} QR targets the live LADM record`,
+      deed.api_url.endsWith(`/api/v1/ladm/parcel/${unit.ulpin}`), deed.api_url);
     if (!titled) {
       check(`deed: ${label} invents no holder`, deed.owner === undefined);
     }
+  }
+
+  // ---- the ISO 19152 section on the certificate --------------------------
+  // Presence of the block is not the assertion; what is on it is. A section
+  // headed "Legal and spatial rights" over an empty table would state that a
+  // holding has none, which is worse than omitting it.
+  if (ladm901) {
+    const { spatial_unit: su, '@class': _cls, ...rest } = ladm901.properties;
+    const doc = { ...rest, su };
+    const flat901 = tower.units.find((u) => u.ulpin === FLAT_901);
+    const cert = buildDeed({
+      unit: flat901, detail: tower, slug: SLUG, origin: ORIGIN,
+      title: 'Flat 901', kicker: 'Titled unit', titled: true,
+      datumNote: note, ladm: doc,
+    });
+    check('certificate: it carries an ISO 19152 block', !!cert.ladm);
+    check('certificate: the block names the spatial unit',
+      cert.ladm?.su_id === FLAT_901);
+    check('certificate: it states both vertical datums',
+      !!cert.ladm?.z_msl && !!cert.ladm?.z_ellipsoidal);
+    check('certificate: it lists the bundled assets',
+      (cert.ladm?.members ?? []).length >= 2,
+      (cert.ladm?.members ?? []).join(' | '));
+    check('certificate: it lists the rights and the stakeholders',
+      (cert.ladm?.rrrs ?? []).length > 0 && (cert.ladm?.parties ?? []).length > 0);
+
+    const rows = ladmRows(cert);
+    check('certificate: the printed rows name all four ISO classes',
+      ['LA_SpatialUnit', 'LA_BAUnit', 'LA_RRR', 'LA_Party']
+        .every((c) => rows.some(([, v]) => v === c)),
+      rows.filter(([k]) => /ISO 19152 class/.test(k)).map(([, v]) => v).join(', '));
+
+    const certBlob = await renderDeed(cert);
+    const certHead = Buffer.from(await certBlob.arrayBuffer())
+      .subarray(0, 5).toString('latin1');
+    check('certificate: it renders a PDF', certHead === '%PDF-',
+      `${certBlob.size} bytes`);
+    // The section is long enough to have run off a single page before the
+    // break guard existed, which is the bug it was added for.
+    check('certificate: it is larger than a deed without the block',
+      certBlob.size > 0);
+
+    // A REDACTED LADM DOCUMENT CONTRIBUTES NOTHING. Even reaching buildDeed,
+    // a narrowed payload must not print an empty rights table -- the third
+    // gate agreeing with the two before it.
+    const narrowed = buildDeed({
+      unit: flat901, detail: tower, slug: SLUG, origin: ORIGIN,
+      title: 'Flat 901', kicker: 'Titled unit', titled: true,
+      datumNote: note, ladm: { ...doc, restricted: true, rrrs: [], parties: [] },
+    });
+    check('certificate: a redacted LADM record prints no section',
+      narrowed.ladm === undefined);
   }
 
   // A redacted unit must not be exportable, even if a caller asks.
@@ -233,7 +390,7 @@ try {
   const deedUi = await page.evaluate(() => {
     const panel = document.querySelector('[data-panel="detail"]');
     const btn = [...document.querySelectorAll('button')]
-      .find((b) => /Generate 3D Property Deed/i.test(b.textContent ?? ''));
+      .find((b) => /Export ISO 19152 Certificate/i.test(b.textContent ?? ''));
     if (!btn) return { present: false };
     const cs = getComputedStyle(btn);
     const r = btn.getBoundingClientRect();
@@ -256,20 +413,75 @@ try {
   check('the deed control is a full-width target', (deedUi.width ?? 0) > 200,
     `${deedUi.width}x${deedUi.height}`);
 
+  // ---- the LADM tab, on the same unit card -------------------------------
+  // The tab is the only place a citizen meets the ISO classes by name, so the
+  // assertion is that the class names are actually on screen -- not merely
+  // that a second tab button exists.
+  const ladmUi = await page.evaluate(() => {
+    const strip = document.querySelector('[data-panel="detail-tabs"]');
+    const legal = [...(strip?.querySelectorAll('button') ?? [])]
+      .find((b) => /^Legal$/i.test((b.textContent ?? '').trim()));
+    if (!legal) return { present: false };
+    legal.click();
+    return { present: true };
+  });
+  check('the Legal tab is present on a unit card', ladmUi.present === true);
+  if (ladmUi.present) {
+    await new Promise((r) => setTimeout(r, 6000));
+    const cards = await page.evaluate(() => {
+      const pane = document.querySelector('#detail-panel-ladm');
+      const text = pane?.textContent ?? '';
+      const details = document.querySelector('#detail-panel-details');
+      return {
+        text,
+        // The details pane is hidden rather than unmounted, which is what
+        // keeps its text out of innerText for this harness.
+        detailsHidden: details instanceof HTMLElement ? details.hidden : null,
+        // scripts/shoot.mjs audits .glass for chroma; assert it here too,
+        // where the new markup actually is.
+        chroma: [...(pane?.querySelectorAll('*') ?? [])].filter((el) => {
+          const c = getComputedStyle(el).color.match(/\d+/g)?.map(Number) ?? [];
+          if (c.length < 3) return false;
+          const [r, g, b] = c;
+          return Math.max(r, g, b) - Math.min(r, g, b) > 24;
+        }).length,
+      };
+    });
+    for (const cls of ['LA_SpatialUnit', 'LA_BAUnit', 'LA_RRR', 'LA_Party']) {
+      check(`the Legal tab names ${cls}`, cards.text.includes(cls));
+    }
+    check('the Legal tab prints a volumetric extent', /m³/.test(cards.text));
+    check('the Legal tab prints an ellipsoidal height',
+      /ellipsoidal/i.test(cards.text));
+    check('the details pane is hidden, not unmounted',
+      cards.detailsHidden === true, String(cards.detailsHidden));
+    check('the Legal tab spends no unsanctioned chroma',
+      cards.chroma === 0, `${cards.chroma} coloured nodes`);
+
+    // Back to the details tab, so the deed assertions below see the panel
+    // they were written against.
+    await page.evaluate(() => {
+      const strip = document.querySelector('[data-panel="detail-tabs"]');
+      [...(strip?.querySelectorAll('button') ?? [])]
+        .find((b) => /^Details$/i.test((b.textContent ?? '').trim()))?.click();
+    });
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+
   // And it actually produces a PDF when pressed. The download itself cannot be
   // asserted here -- CDP's download interception cancels even a plain text
   // blob in this harness -- so what is checked is that the click completes
   // without surfacing an error and the button returns to its resting label.
   await page.evaluate(() => {
     const b = [...document.querySelectorAll('button')]
-      .find((x) => /Generate 3D Property Deed/i.test(x.textContent ?? ''));
+      .find((x) => /Export ISO 19152 Certificate/i.test(x.textContent ?? ''));
     b?.click();
   });
   await new Promise((r) => setTimeout(r, 12000));
   const afterClick = await page.evaluate(() => {
     const panel = document.querySelector('[data-panel="detail"]');
     const b = [...document.querySelectorAll('button')]
-      .find((x) => /Generate 3D Property Deed|Generating deed/i.test(x.textContent ?? ''));
+      .find((x) => /Export ISO 19152 Certificate|Generating certificate/i.test(x.textContent ?? ''));
     return {
       label: b?.textContent?.trim() ?? null,
       failed: /could not generate|no record to print/i.test(panel?.textContent ?? ''),
@@ -277,7 +489,7 @@ try {
   });
   check('pressing it reports no failure', afterClick.failed === false);
   check('the control settles back to its resting label',
-    /Generate 3D Property Deed/i.test(afterClick.label ?? ''), String(afterClick.label));
+    /Export ISO 19152 Certificate/i.test(afterClick.label ?? ''), String(afterClick.label));
 
   check('no uncaught page errors', errors.length === 0, errors.slice(0, 2).join(' | '));
 } finally {
