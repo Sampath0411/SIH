@@ -156,6 +156,13 @@ SELECT COALESCE(json_object_agg(s.id, s.doc), '{{}}'::json) FROM (
         'unit_no', un.unit_no, 'z_min', un.z_min, 'z_max', un.z_max,
         'carpet_m2', un.carpet_m2, 'built_m2', un.built_m2,
         'tenure', un.tenure, 'encumbrance', un.encumbrance,
+        -- owner/address/facing are NULL for every OSM-derived unit and set
+        -- only on the surveyed demo tower. They were missing here while
+        -- seed_demo_building.mjs wrote them straight into detail.json, so a
+        -- re-export silently dropped them and every flat lost its owner.
+        'owner', un.owner, 'address', un.address, 'facing', un.facing,
+        -- What the volume is, and the vertical core it belongs to.
+        'kind', un.kind, 'core_ref', un.core_ref, 'label', un.label,
         'level_no', f2.level_no,
         'ring', ST_AsGeoJSON(ST_Force2D(ST_GeometryN(un.geom_3d, 1)), 7)::json)
         ORDER BY f2.level_no, un.unit_no)
@@ -180,6 +187,7 @@ SELECT json_build_object('projects', COALESCE(json_agg(json_build_object(
   'status', p.status,
   'elev_source', p.elev_source,
   'elev_datum', p.elev_datum,
+  'geoid_sep_m', p.geoid_sep_m,
   'bhuvan_layers', p.bhuvan_layers,
   'created_at', to_char(p.created_at AT TIME ZONE 'UTC',
                         'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'),

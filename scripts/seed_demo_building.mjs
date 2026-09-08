@@ -166,6 +166,102 @@ function flatAreaM2() {
   return w * h;
 }
 
+/**
+ * A unit slot, mirroring unitSlot() in lib/ulpin.ts.
+ *
+ * Mirrored rather than imported because this script runs under plain `node`
+ * (npm run demo:seed), which cannot load a .ts module without a strip-types
+ * flag. lib/ulpin.test.ts pins the encoding on the other side, and every
+ * identifier this file mints is parsed back by parse() in the round-trip check.
+ *
+ * A flat carries no prefix, which is what keeps the 80 identifiers already in
+ * data/api/siripuram/detail.json byte-identical.
+ */
+const SLOT_PREFIX = {
+  flat: '', retail: 'R', anchor: 'R', parking: 'P',
+  circulation: 'C', atrium: 'C', elevator: 'EV', stair: 'ST', plant: 'PL',
+};
+function unitSlot(kind, ordinal) {
+  const pre = SLOT_PREFIX[kind];
+  if (ordinal === undefined || ordinal === null) return pre;
+  return `${pre}${String(ordinal).padStart(2, '0')}`;
+}
+
+/** A closed ring from normalised footprint fractions, x/y in 0..1. */
+function fracRing(fx0, fy0, fx1, fy1) {
+  const x0 = lon0 + FL * fx0;
+  const x1 = lon0 + FL * fx1;
+  const y0 = lat0 + FW * fy0;
+  const y1 = lat0 + FW * fy1;
+  return [[[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]]];
+}
+
+/** Area of a normalised rectangle, m². Same degrees->metres convention as
+ *  flatAreaM2, so every area in this file stays comparable. */
+function fracAreaM2(fx0, fy0, fx1, fy1) {
+  return (FL * (fx1 - fx0) * 111000) * (FW * (fy1 - fy0) * 111000);
+}
+
+/**
+ * THE VERTICAL CORES: the lift shaft and the emergency staircase.
+ *
+ * They occupy the north-south arm of the corridor cross that flatRing()
+ * already leaves empty -- x from 0.47 to 0.53, which is exactly the gap
+ * between the west flats (which end at 0.47) and the east flats (which start
+ * at 0.53). Nothing here can overlap a flat, on any floor, by construction.
+ *
+ * Each is ONE ROW PER LEVEL sharing `core_ref`, not one row spanning the
+ * tower. `unit.floor_id` is NOT NULL, and the viewer's exploded stack and its
+ * section cut are both indexed by level: a single spanning solid would detach
+ * from the stack the moment the explode slider moved, and the section plane
+ * would cut it at one level and leave it whole at twenty-two others. The panel
+ * groups the segments back together and reports the span.
+ */
+const CORES = [
+  {
+    kind: 'elevator',
+    core_ref: 'EV1',
+    label: 'Central Elevator Shaft',
+    unit_no: 'EV',
+    frac: [0.47, 0.30, 0.53, 0.47],
+  },
+  {
+    kind: 'stair',
+    core_ref: 'ST1',
+    label: 'Emergency Staircase Core',
+    unit_no: 'ST',
+    frac: [0.47, 0.53, 0.53, 0.70],
+  },
+];
+
+/**
+ * Levels the cores run through: B2 up to the top floor.
+ *
+ * B3 is plant and tankage and is not served by the passenger lift, so the
+ * shaft starts at B2 -- which is what the brief describes, and also what keeps
+ * the deepest basement from reading as another parking level.
+ */
+const CORE_LEVELS = [-2, -1, ...Array.from({ length: 21 }, (_, i) => i)];
+
+/**
+ * Subterranean parking, on B1 and B2.
+ *
+ * Two banks of bays against the north and south walls with a drive aisle
+ * between them, which is where the cores stand. The aisle is deliberately not
+ * modelled as a volume: it is circulation on a level that has no other
+ * circulation to distinguish it from, and a box labelled "aisle" filling the
+ * middle of the plate would hide the bays behind it.
+ *
+ * B3 gets none. It is plant, tankage and the sump -- the sewer tank utility
+ * (99003) already sits at that depth -- and giving all three basements an
+ * identical grid would state that they are interchangeable, which is the kind
+ * of plausible filler this repository avoids elsewhere.
+ */
+const PARKING_LEVELS = [-1, -2];
+const BAYS_PER_BANK = 10;
+/** South bank, then north bank: [y0, y1] of each. */
+const PARKING_BANKS = [[0.05, 0.28], [0.72, 0.95]];
+
 /** Indian flat numbering: floor 2 slot 1 -> "201", floor 20 slot 3 -> "2003". */
 function flatCode(level, slotNo) {
   return `${level}${String(slotNo).padStart(2, '0')}`;
@@ -607,6 +703,115 @@ for (const lvl of FLAT_FLOORS) {
   });
 }
 
+// ---------------------------------------------------------------------------
+// 3b. The volumes that are not flats.
+//
+// Before this, levels B3..B1 and the ground floor held no unit rows at all, so
+// isolating one of them drew the storey prism and nothing inside it -- the
+// "single bounding extrusion box" the interior model exists to replace. The
+// flats above were already individual volumes; the basements and the lobby had
+// nothing to show.
+//
+// NONE OF THESE CARRY AN OWNER. A parking bay is appurtenant to a flat, and
+// the lift shaft, the staircase and the lobby are common property held by the
+// association rather than titled separately. Inventing a holder for them would
+// be exactly the attribution error the nullable `owner` column was added to
+// prevent -- so tenure says what they are and the panel says nothing more.
+// ---------------------------------------------------------------------------
+const floorByLevel = new Map(floors.map((f) => [f.level_no, f]));
+
+/** Push one non-flat volume, taking the next id from the shared counter. */
+function pushVolume({ level, kind, ordinal, unit_no, label, frac, tenure }) {
+  const floorEntry = floorByLevel.get(level);
+  if (!floorEntry) return;
+  const [fx0, fy0, fx1, fy1] = frac;
+  const area = fracAreaM2(fx0, fy0, fx1, fy1);
+  units.push({
+    id: unitIdBase + unitCounter,
+    floor_id: floorEntry.id,
+    ulpin: `${floorEntry.ulpin}-${unitSlot(kind, ordinal)}`,
+    unit_no,
+    level_no: level,
+    z_min: floorEntry.z_min,
+    z_max: floorEntry.z_max,
+    // Carpet is the usable area; for a bay or a shaft it IS the enclosed
+    // area, so the 0.72 factor the flats use does not apply.
+    carpet_m2: Math.round(area * 10) / 10,
+    built_m2: Math.round(area * 10) / 10,
+    tenure,
+    encumbrance: 'None',
+    kind,
+    label,
+    ring: { type: 'Polygon', coordinates: fracRing(fx0, fy0, fx1, fy1) },
+  });
+  unitCounter++;
+}
+
+// ---- subterranean parking bays -------------------------------------------
+// Numbered by level in the Indian convention the flats already use: B1 is the
+// 100 series, B2 the 200 series, so slot P-101 is the first bay on B1.
+for (const level of PARKING_LEVELS) {
+  const series = -level * 100;
+  let n = 0;
+  for (const [by0, by1] of PARKING_BANKS) {
+    for (let i = 0; i < BAYS_PER_BANK; i += 1) {
+      n += 1;
+      // A hairline gap between neighbouring bays, so the painted line between
+      // two cars is visible rather than two solids sharing a wall. The flats
+      // get the same treatment at render time via FLOOR_VIEW.UNIT_INSET_M.
+      const x0 = 0.05 + (0.90 / BAYS_PER_BANK) * i + 0.004;
+      const x1 = 0.05 + (0.90 / BAYS_PER_BANK) * (i + 1) - 0.004;
+      const ordinal = series + n;
+      pushVolume({
+        level,
+        kind: 'parking',
+        ordinal,
+        unit_no: `P-${ordinal}`,
+        label: `Parking Slot P-${ordinal}`,
+        frac: [x0, by0, x1, by1],
+        // Appurtenant to a flat, not separately titled. The panel prints this
+        // instead of a tenure it cannot support.
+        tenure: 'Appurtenant',
+      });
+    }
+  }
+}
+
+// ---- the two vertical cores ----------------------------------------------
+// One row per level, sharing core_ref. See the CORES comment above for why
+// this is not a single spanning solid.
+for (const core of CORES) {
+  for (const level of CORE_LEVELS) {
+    pushVolume({
+      level,
+      kind: core.kind,
+      ordinal: undefined,
+      unit_no: core.unit_no,
+      label: core.label,
+      frac: core.frac,
+      tenure: 'Common area',
+    });
+    // pushVolume cannot carry core_ref through its argument list without
+    // making every caller pass a null, so it is set on the row just written.
+    const just = units[units.length - 1];
+    if (just && just.level_no === level) just.core_ref = core.core_ref;
+  }
+}
+
+// ---- the ground-floor lobby ----------------------------------------------
+// Level 0 is deliberately not residential (see FLAT_FLOORS), which left it as
+// empty as the basements. It is the entrance lobby, and it is the one volume
+// on that level besides the two cores passing through it.
+pushVolume({
+  level: 0,
+  kind: 'circulation',
+  ordinal: 1,
+  unit_no: 'LOBBY',
+  label: 'Entrance Lobby',
+  frac: [0.06, 0.06, 0.94, 0.28],
+  tenure: 'Common area',
+});
+
 detail[String(BUILDING_ID)] = {
   building: {
     ...newBuilding.properties,
@@ -733,13 +938,33 @@ const mortgaged = Object.values(flatRegister).filter((e) => e.mortgage).length;
 const taxDue = Object.values(flatRegister)
   .filter((e) => (e.tax?.paid_inr ?? 0) < (e.tax?.demand_inr ?? 0)).length;
 
+// Counted by kind rather than reported as `units.length` flats, which is what
+// this line used to say and stopped being true the moment the basements and
+// the cores became volumes: it printed "167 flats" for 80 flats and 87 other
+// things.
+const byKind = units.reduce((acc, u) => {
+  const k = u.kind ?? 'flat';
+  acc[k] = (acc[k] ?? 0) + 1;
+  return acc;
+}, {});
+
 console.log('Seeded building 999:');
 console.log(
-  `  ${units.length} flats: 4 per floor on floors `
-  + `${FLAT_FLOORS[0]}-${FLAT_FLOORS[FLAT_FLOORS.length - 1]}`,
+  `  ${byKind.flat ?? 0} flats: 4 per floor on floors `
+  + `${FLAT_FLOORS[0]}-${FLAT_FLOORS[FLAT_FLOORS.length - 1]}`
+  + `, each ${builtM2} m² built-up / ${carpetM2} m² carpet`,
 );
 console.log(`  flat register: ${mortgaged} mortgaged, ${taxDue} with tax outstanding`);
-console.log(`  each ${builtM2} m² built-up / ${carpetM2} m² carpet`);
+console.log(
+  `  ${byKind.parking ?? 0} parking slots on B1-B2`
+  + `, ${byKind.circulation ?? 0} lobby`,
+);
+console.log(
+  `  cores: ${byKind.elevator ?? 0}-level lift shaft + `
+  + `${byKind.stair ?? 0}-level staircase, B2 to level `
+  + `${CORE_LEVELS[CORE_LEVELS.length - 1]}`,
+);
+console.log(`  ${units.length} volumes on ${floors.length} levels`);
 console.log('  3 basements (B1, B2, B3)');
 console.log('  1 water riser, 1 sewer lateral, 1 sewer tank');
 console.log('Snapshot files updated.');
@@ -791,7 +1016,20 @@ async function seedPostgis() {
     await client.query(`
       ALTER TABLE unit ADD COLUMN IF NOT EXISTS owner text,
                        ADD COLUMN IF NOT EXISTS address text,
-                       ADD COLUMN IF NOT EXISTS facing text`);
+                       ADD COLUMN IF NOT EXISTS facing text,
+                       ADD COLUMN IF NOT EXISTS kind text NOT NULL DEFAULT 'flat',
+                       ADD COLUMN IF NOT EXISTS core_ref text,
+                       ADD COLUMN IF NOT EXISTS label text`);
+    // The CHECK from migration 006. Dropped and re-added rather than created
+    // conditionally, so a volume carrying an older, narrower list is widened
+    // rather than rejecting the parking bays and cores below.
+    await client.query(
+      'ALTER TABLE utility ADD COLUMN IF NOT EXISTS building_id integer');
+    await client.query('ALTER TABLE unit DROP CONSTRAINT IF EXISTS unit_kind_ck');
+    await client.query(`
+      ALTER TABLE unit ADD CONSTRAINT unit_kind_ck CHECK (kind IN (
+        'flat','retail','anchor','parking',
+        'circulation','atrium','elevator','stair','plant'))`);
 
     // Delete first, in dependency order. floor/unit cascade from building.
     await client.query('DELETE FROM building WHERE id = $1', [BUILDING_ID]);
@@ -844,14 +1082,18 @@ async function seedPostgis() {
       await client.query(
         `INSERT INTO unit (id, floor_id, ulpin, unit_no, geom_3d, z_min, z_max,
                            carpet_m2, built_m2, tenure, encumbrance,
-                           owner, address, facing)
+                           owner, address, facing, kind, core_ref, label)
          VALUES ($1,$2,$3,$4,
                  make_prism(ST_GeomFromEWKT($5), $6, $7),
-                 $6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+                 $6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
         [u.id, u.floor_id, u.ulpin, u.unit_no,
           ring2d(u.ring.coordinates[0]), u.z_min, u.z_max,
           u.carpet_m2, u.built_m2, u.tenure, u.encumbrance,
-          u.owner, u.address, u.facing],
+          u.owner ?? null, u.address ?? null, u.facing ?? null,
+          // A flat carries no `kind` in the row objects above, so the column
+          // default is spelled out here rather than relying on the INSERT
+          // omitting it -- it cannot, the column is in the list.
+          u.kind ?? 'flat', u.core_ref ?? null, u.label ?? null],
       );
     }
 
@@ -865,16 +1107,20 @@ async function seedPostgis() {
       // this case, and a wrong solid would be worse than no solid.
       await client.query(
         `INSERT INTO utility (id, asset_type, geom_3d, envelope_3d, depth_m,
-                              radius_m, authority, status, project_id)
-         VALUES ($1,$2,ST_GeomFromEWKT($3),NULL,$4,$5,$6,$7,$8)`,
+                              radius_m, authority, status, project_id,
+                              building_id)
+         VALUES ($1,$2,ST_GeomFromEWKT($3),NULL,$4,$5,$6,$7,$8,$9)`,
         [p.id, p.asset_type, ewkt, p.depth_m, p.radius_m,
-          p.authority, p.status, projectId],
+          p.authority, p.status, projectId,
+          // These three serve this building, not a street. The snapshot has
+          // always said so; until migration 006 the database had nowhere to.
+          p.building_id ?? null],
       );
     }
 
     await client.query('COMMIT');
     console.log(`PostGIS: building ${BUILDING_ID}, ${floors.length} floors, `
-      + `${units.length} flats, 3 utilities upserted.`);
+      + `${units.length} volumes, 3 utilities upserted.`);
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     console.error(`PostGIS: FAILED, snapshot is still correct -- ${err.message}`);

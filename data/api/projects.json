@@ -22,7 +22,7 @@
       },
       "created_at": "2026-09-01T04:49:47.000Z",
       "stats": {
-        "units": 6518,
+        "units": 6614,
         "floors": 1834,
         "parcels": 326,
         "streets": 131,
@@ -30,7 +30,8 @@
         "conflicts": 0,
         "utilities": 304,
         "survey_parcels": 325
-      }
+      },
+      "geoid_sep_m": -72.1426065216065
     },
     {
       "slug": "hyderabad-banjara",
@@ -58,7 +59,8 @@
         "conflicts": 80,
         "utilities": 1214,
         "survey_parcels": 1308
-      }
+      },
+      "geoid_sep_m": null
     },
     {
       "slug": "vizag-infra",
@@ -85,7 +87,8 @@
         "buildings": 2,
         "conflicts": 0,
         "utilities": 15
-      }
+      },
+      "geoid_sep_m": null
     }
   ]
 }
