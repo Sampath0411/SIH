@@ -47,6 +47,8 @@ interface UnitState {
   explodeT: number;
   /** A section is being cut, so every level is drawn as a plate. */
   sliced: boolean;
+  /** The underground view is open, so the below-grade volumes are the subject. */
+  underground: boolean;
   /** Eased 0-1 master opacity; see the rAF driver at the bottom. */
   fade: number;
   fadeTarget: number;
@@ -109,7 +111,8 @@ export default function UnitsLayer() {
 
   const stateRef = useRef<UnitState>({
     mode: 'city', isolated: null, selectedId: null, hoveredId: null,
-    anySelected: false, explodeT: 0, sliced: false, fade: 0, fadeTarget: 0,
+    anySelected: false, explodeT: 0, sliced: false, underground: false,
+    fade: 0, fadeTarget: 0,
     sliceVersion: 0, plane: null, armFade: null,
   });
   const dsRef = useRef<Cesium.CustomDataSource | null>(null);
@@ -128,13 +131,18 @@ export default function UnitsLayer() {
     s.anySelected = selectedUnitId !== null;
     s.explodeT = explodeT;
     s.sliced = slice.enabled;
-    // Flats are the interior of one storey of one building. Underground
-    // they are pure clutter standing over the thing being inspected, so
-    // the fade target goes to zero -- derived from the mode, never written
-    // back into layers.floors, so leaving the mode restores what the user
-    // had.
+    s.underground = underground;
+    // Underground, this layer used to go to zero: when a unit could only be a
+    // flat, every one of them stood over the thing being inspected and was
+    // pure clutter. Now the basements hold the parking bays and the lower
+    // segments of the two cores, which are exactly what the underground view
+    // is for -- so the layer stays up and `onScreen` restricts it to the
+    // below-grade volumes instead. Above-ground flats still disappear.
+    //
+    // Derived from the mode, never written back into layers.floors, so
+    // leaving the view restores what the user had.
     const next = underground
-      ? 0
+      ? (showFloors ? 1 : 0)
       : opacityFor(mode, isolatedFloor, explodeT, slice.enabled, showFloors);
     if (next !== s.fadeTarget) {
       s.fadeTarget = next;
@@ -266,9 +274,15 @@ export default function UnitsLayer() {
       const onScreen = (): boolean => {
         const s = stateRef.current;
         if (s.fade <= 0.02) return false;
+        // Underground, the below-grade volumes ARE the subject -- the parking
+        // bays and the part of each core below grade -- and the above-ground
+        // flats are the clutter. This is the mirror of the fade rule in
+        // opacityFor: that one takes the layer down when the user goes under,
+        // and this one keeps the basement contents up while they are there.
+        if (s.underground) return level < 0;
         // A section shows every above-ground level's flats at once; so does the
-        // exploded stack. Basement flats stay inside the grey below-grade mass,
-        // which is drawn solid and does not lift.
+        // exploded stack. Basement volumes stay inside the grey below-grade
+        // mass, which is drawn solid and does not lift.
         if (s.mode === 'building' || (s.sliced && s.isolated === null)) {
           return level >= 0;
         }
@@ -304,7 +318,10 @@ export default function UnitsLayer() {
               if (unit.restricted) return MATERIALS.unitRestricted(a);
               if (s.selectedId === uid) return MATERIALS.unitSelected(a);
               if (s.hoveredId === uid) return MATERIALS.unitHover(a);
-              return MATERIALS.unitTint(slot, a);
+              // A parking bay, a shop, an atrium or a core is coloured by what
+              // it IS. Only a flat falls through to the slot tint, whose whole
+              // meaning is "not the one next to it".
+              return MATERIALS.unitKindTint(unit.kind, a) ?? MATERIALS.unitTint(slot, a);
             }, false),
           ),
           // The selected unit gets a silhouette outline, so it reads as chosen
@@ -314,6 +331,9 @@ export default function UnitsLayer() {
           outlineColor: new Cesium.CallbackProperty(
             () => {
               if (isOwn()) return MATERIALS.unitOwnOutline;
+              if (unit.core_ref && stateRef.current.selectedId !== uid) {
+                return MATERIALS.unitCoreOutline;
+              }
               return stateRef.current.selectedId === uid
                 ? MATERIALS.unitOutline
                 : MATERIALS.unitOutlineIdle;

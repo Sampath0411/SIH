@@ -120,6 +120,9 @@ export default function LayerPanel() {
   const setViewMode = useViewStore((s) => s.setViewMode);
   const theme = useViewStore((s) => s.theme);
   const toggleTheme = useViewStore((s) => s.toggleTheme);
+  const topology = useViewStore((s) => s.topology);
+  const runTopology = useViewStore((s) => s.runTopology);
+  const clearTopology = useViewStore((s) => s.clearTopology);
   const mode = useViewStore((s) => s.mode);
   const imageryProvider = useViewStore((s) => s.imageryProvider);
   const setImageryProvider = useViewStore((s) => s.setImageryProvider);
@@ -468,6 +471,62 @@ export default function LayerPanel() {
             );
           })}
         </div>
+      </div>
+
+      {/*
+        TOPOLOGY VALIDATION.
+        Lives here rather than in the ActionBar or the NavDock because
+        scripts/verify_ui.mjs asserts that neither of those panels contains a
+        disabled control, and this one is disabled while a run is in flight.
+
+        A BUTTON, NOT A LAYER CHECKBOX. Every switch above toggles the
+        visibility of data already loaded; this one asks the server a question
+        whose answer changes with every edit, so pressing it again has to mean
+        "ask again" rather than "hide what you found".
+      */}
+      <div className="mt-3 border-t border-[rgb(var(--edge))]/50 pt-2.5">
+        <span className="row-label">Validation</span>
+        <button
+          type="button"
+          onClick={() => { void runTopology(); }}
+          disabled={topology.running}
+          aria-busy={topology.running}
+          title="Test every subsurface run against basement and parking volumes, and every elevated deck against building envelopes, in 3D"
+          className={[
+            'mt-1 w-full rounded py-1 text-[11px] transition-colors',
+            topology.running
+              ? 'is-disabled bg-[rgb(var(--tint)/0.06)]'
+              : 'bg-[rgb(var(--tint)/0.06)] text-[rgb(var(--ink))] tint-hover',
+          ].join(' ')}
+        >
+          {topology.running ? 'Validating…' : 'Run Topology Validation'}
+        </button>
+
+        {topology.error ? (
+          <p className="mt-1 text-[10px] leading-snug text-[rgb(var(--danger))]">
+            {topology.error}
+          </p>
+        ) : topology.ranAt ? (
+          <div className="mt-1 flex items-baseline justify-between gap-2">
+            <p className="text-[10px] leading-snug text-[rgb(var(--muted))]">
+              {topology.findings.length === 0
+                ? 'No clashes or clearance breaches found.'
+                : `${topology.findings.length} finding${
+                  topology.findings.length === 1 ? '' : 's'} — listed in the panel.`}
+            </p>
+            <button
+              type="button"
+              onClick={clearTopology}
+              className="shrink-0 rounded px-1 py-0.5 text-[10px] text-[rgb(var(--muted))] tint-hover"
+            >
+              Clear
+            </button>
+          </div>
+        ) : (
+          <p className="mt-1 text-[10px] leading-snug text-[rgb(var(--muted))]">
+            Runs ST_3DIntersects and ST_3DDistance over the project.
+          </p>
+        )}
       </div>
 
       <button

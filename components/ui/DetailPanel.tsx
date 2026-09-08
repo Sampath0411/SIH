@@ -7,8 +7,19 @@ import { componentForRef } from '@/components/layers/InfraSiteLayer';
 import { LULC_SOURCE_SHORT, lulcClassLabel } from '@/lib/bhuvan';
 import { RISK_HEX } from '@/lib/cesium/materials';
 import type { RiskClass } from '@/lib/types';
+import type { ClashFinding } from '@/lib/topology';
+
+/** The store's topology slice, named so the section component can take it. */
+interface ViewTopology {
+  running: boolean;
+  ranAt: string | null;
+  error: string | null;
+  findings: ClashFinding[];
+  selected: number | null;
+}
 import BuildingEditForm from './detail/BuildingEditForm';
 import UnsavedBanner from './detail/UnsavedBanner';
+import DeedButton from './detail/DeedButton';
 import { ROAD_CLASS_LABEL, utilityAssetLabel } from '@/lib/cesium/materials';
 import {
   UNDERGROUND_BY_KEY, categoryOfAssetType,
@@ -351,6 +362,167 @@ function isPast(iso: string): boolean {
   const t = Date.parse(`${iso}T00:00:00Z`);
   return Number.isFinite(t) && t < Date.now();
 }
+/**
+ * How to title and describe a volume, by what it is.
+ *
+ * A level holds more than flats now: parking bays below grade, shops and an
+ * atrium on a retail ground floor, and the lift and stair cores running the
+ * height of the building. Calling all of them "Flat" was the first thing that
+ * gave away that the model had outgrown the panel.
+ *
+ * `titled` is the part that matters beyond the wording. A shop and a flat have
+ * a holder, a tenure and a charge; a staircase, an atrium and a corridor do
+ * not, and a parking bay is appurtenant to a flat rather than separately held.
+ * Printing "Held by: Not on record" against a lift shaft would be inventing a
+ * missing record where there is no record to miss -- the same error the owner
+ * fallback used to make in the other direction.
+ */
+const UNIT_KINDS: Record<string, { noun: string; kicker: string; titled: boolean }> = {
+  flat:        { noun: 'Flat',         kicker: 'Titled unit',       titled: true },
+  retail:      { noun: 'Shop',         kicker: 'Retail bay',        titled: true },
+  anchor:      { noun: '',             kicker: 'Anchor tenancy',    titled: true },
+  parking:     { noun: 'Parking slot', kicker: 'Appurtenant space', titled: false },
+  circulation: { noun: '',             kicker: 'Common space',      titled: false },
+  atrium:      { noun: '',             kicker: 'Common space',      titled: false },
+  elevator:    { noun: '',             kicker: 'Structural core',   titled: false },
+  stair:       { noun: '',             kicker: 'Structural core',   titled: false },
+  plant:       { noun: '',             kicker: 'Plant space',       titled: false },
+};
+
+/** The descriptor for a unit, defaulting to the flat behaviour. */
+function unitKindOf(kind: string | undefined) {
+  return UNIT_KINDS[kind ?? 'flat'] ?? UNIT_KINDS.flat;
+}
+
+/**
+ * What to call this volume on the card.
+ *
+ * The seeded `label` wins where there is one -- 'Anchor Store', 'Public
+ * Atrium', 'Central Elevator Shaft' are the names these spaces actually have.
+ * Everything else falls back to "<noun> <code>", which is how a flat and a
+ * shop are named on the door.
+ */
+function unitTitle(unit: { unit_no: string; label?: string; kind?: string }): string {
+  if (unit.label) return unit.label;
+  const noun = unitKindOf(unit.kind).noun;
+  return noun ? `${noun} ${unit.unit_no}` : unit.unit_no;
+}
+
+/**
+ * The result of the last topology validation run.
+ *
+ * Rendered in the AOI-summary branch -- the state the panel is in when nothing
+ * is selected, which is where a project-wide answer belongs. A per-building
+ * card would have to filter, and a finding is about a PAIR of things that
+ * often sit in two different buildings.
+ *
+ * "Ran, found nothing" is shown as its own state and not as an empty list.
+ * It is the only reassuring answer this feature can give, and collapsing it
+ * into the same blank as "never asked" would throw it away.
+ */
+function TopologyFindings({
+  topology, onSelect,
+}: {
+  topology: ViewTopology;
+  onSelect: (i: number | null) => void;
+}) {
+  if (!topology.ranAt && !topology.running && !topology.error) return null;
+
+  const critical = topology.findings.filter((f) => f.severity === 'critical').length;
+  const warnings = topology.findings.length - critical;
+
+  return (
+    <Section title="Topology validation">
+      {topology.running ? (
+        <p className="text-[11px] text-muted">Testing volumes in 3D…</p>
+      ) : topology.error ? (
+        <p className="text-[11px] text-[rgb(var(--danger))]">{topology.error}</p>
+      ) : topology.findings.length === 0 ? (
+        <p className="text-[11px] leading-relaxed text-muted">
+          No clashes and no clearance breaches. Every subsurface run tested
+          clear of the basement and parking volumes it passes near, and no
+          elevated structure occupies a building&rsquo;s airspace.
+        </p>
+      ) : (
+        <>
+          <div className="mb-1.5 flex flex-wrap gap-1">
+            {critical > 0 ? (
+              <StateChip label={`${critical} encroachment${critical === 1 ? '' : 's'}`} alert />
+            ) : null}
+            {warnings > 0 ? (
+              <StateChip
+                label={`${warnings} clearance breach${warnings === 1 ? '' : 'es'}`}
+                alert={false}
+              />
+            ) : null}
+          </div>
+          <ul className="space-y-1">
+            {topology.findings.map((f, i) => {
+              const sel = topology.selected === i;
+              return (
+                <li key={`${f.kind}-${String(f.a.id)}-${f.b.type}-${String(f.b.id)}`}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(sel ? null : i)}
+                    aria-pressed={sel}
+                    className={[
+                      'w-full rounded px-1.5 py-1 text-left transition-colors',
+                      sel ? 'is-active' : 'tint-hover',
+                    ].join(' ')}
+                  >
+                    <span className="flex items-baseline justify-between gap-2">
+                      <span className="truncate text-[11px] text-[rgb(var(--ink))]">
+                        {f.b.label}
+                      </span>
+                      <span
+                        className={[
+                          'shrink-0 font-mono text-[10px]',
+                          f.severity === 'critical'
+                            ? 'text-[rgb(var(--danger))]' : 'text-[rgb(var(--muted))]',
+                        ].join(' ')}
+                      >
+                        {f.separation_m === 0
+                          ? 'overlap'
+                          : `${f.separation_m.toFixed(2)} m`}
+                      </span>
+                    </span>
+                    <span className="mt-0.5 block truncate text-[10px] text-muted">
+                      {f.a.label}
+                    </span>
+                    {sel ? (
+                      <span className="mt-1 block space-y-0.5 text-[10px] text-muted">
+                        <span className="block leading-snug">{f.note}</span>
+                        <span className="block font-mono">
+                          {f.lat.toFixed(6)}, {f.lon.toFixed(6)} · Z {f.z.toFixed(2)} m
+                        </span>
+                        <span className="block font-mono">
+                          Z extent {f.b.z_min.toFixed(2)} → {f.b.z_max.toFixed(2)} m
+                        </span>
+                        {f.b.ulpin ? (
+                          <span className="block font-mono">{f.b.ulpin}</span>
+                        ) : null}
+                        {f.required_m !== undefined ? (
+                          <span className="block">
+                            Required clearance {f.required_m.toFixed(2)} m
+                          </span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-1.5 text-[10px] leading-snug text-muted">
+            Found with ST_3DIntersects and ST_3DDistance over the project&rsquo;s
+            solids. Coordinates are EPSG:4326; Z is orthometric (EGM96).
+          </p>
+        </>
+      )}
+    </Section>
+  );
+}
+
 /** Streets run from tens of metres to kilometres; switch units rather than
  *  printing "2369.7 m". */
 const km = (v: number) =>
@@ -372,6 +544,11 @@ export default function DetailPanel() {
   const selectedRoadId = useViewStore((s) => s.selectedRoadId);
   const underground = useViewStore((s) => s.underground);
   const session = useViewStore((s) => s.session);
+  // The deed prints the project's slug into its QR target and its geoid
+  // separation into the datum note, so it needs the whole row, not the slug.
+  const project = useViewStore((s) => s.project);
+  const topology = useViewStore((s) => s.topology);
+  const selectFinding = useViewStore((s) => s.selectFinding);
   const selectBuilding = useViewStore((s) => s.selectBuilding);
   const selectUtility = useViewStore((s) => s.selectUtility);
   const gis2d = useViewStore((s) => s.gis2d);
@@ -868,6 +1045,10 @@ export default function DetailPanel() {
             ? 'Underground view. Click a utility corridor to inspect it.'
             : 'Click any building to open its vertical stack.'}
         </p>
+
+        {/* Project-wide, so it belongs on the panel's project-wide state.
+            Renders nothing at all until the validation has been run once. */}
+        <TopologyFindings topology={topology} onSelect={selectFinding} />
       </Panel>
     );
   }
@@ -888,7 +1069,7 @@ export default function DetailPanel() {
       // rather than rendering a card full of dashes.
       if (unit.restricted) {
         return (
-          <Panel title={`Flat ${unit.unit_no}`} kicker="Not your flat">
+          <Panel title={unitTitle(unit)} kicker="Not your flat">
             <p className="mt-2 text-[12px] leading-relaxed text-muted">
               This flat is on your floor, but its register entry is not yours
               to read. You can see where it is and how big it is; its ULPIN,
@@ -900,13 +1081,30 @@ export default function DetailPanel() {
       }
       const ring = (unit.ring?.coordinates as number[][][] | undefined)?.[0];
       const centre = ring && ring.length > 1 ? ringCentroid(ring) : null;
+      const kindInfo = unitKindOf(unit.kind);
+      // Every segment of the same core, so the panel can report the span the
+      // shaft actually covers instead of describing one storey of it as if
+      // that were the whole thing.
+      const coreSegments = unit.core_ref
+        ? detail.units.filter((u) => u.core_ref === unit.core_ref)
+        : [];
       const bills = unit.bills ?? [];
       const billsDue = bills.filter((b) => !b.paid);
       const taxDue = unit.tax ? Math.max(0, unit.tax.demand_inr - unit.tax.paid_inr) : 0;
       return (
         <Panel
-          title={`Flat ${unit.unit_no}`}
-          kicker={isOwn ? 'Your flat' : 'Titled unit'}
+          title={unitTitle(unit)}
+          kicker={isOwn ? 'Your flat' : kindInfo.kicker}
+          action={
+            <DeedButton
+              unit={unit}
+              detail={detail}
+              project={project}
+              title={unitTitle(unit)}
+              kicker={isOwn ? 'Your flat' : kindInfo.kicker}
+              titled={kindInfo.titled}
+            />
+          }
         >
           {unit.ulpin ? <UlpinCard ulpin={unit.ulpin} /> : null}
 
@@ -983,13 +1181,53 @@ export default function DetailPanel() {
             />
           </Section>
 
-          <Section title="The flat">
+          <Section title={kindInfo.titled ? 'The unit' : 'The space'}>
             <Row label="Carpet area" value={m2(unit.carpet_m2 ?? 0)} />
             <Row label="Built-up area" value={m2(unit.built_m2 ?? 0)} />
             <Row label="Clear height" value={m(height)} />
             <Row label="Volume" value={`${((unit.built_m2 ?? 0) * height).toFixed(0)} m³`} />
+            {/*
+              A core is one row per level it passes through -- floor_id is NOT
+              NULL, and the exploded stack and the section cut are both
+              per-level. So the SEGMENT is what was clicked and the SHAFT is
+              what the reader means, and the panel has to say both.
+            */}
+            {coreSegments.length > 1 ? (
+              <Row
+                label="Shaft extent"
+                value={`${levelLabel(
+                  Math.min(...coreSegments.map((u) => u.level_no)), bprops.floors - 1,
+                )} to ${levelLabel(
+                  Math.max(...coreSegments.map((u) => u.level_no)), bprops.floors - 1,
+                )} · ${coreSegments.length} levels`}
+                source="derived"
+              />
+            ) : null}
           </Section>
 
+          {/*
+            SUPPRESSED for a volume with no register behind it. A staircase, a
+            lift shaft, an atrium and a circulation passage have no holder, no
+            tenure and no charge, and a parking bay is appurtenant to a flat
+            rather than separately titled. Rendering the rows with "Not on
+            record" in them would present the absence of a record as a gap in
+            one, which is the same wrong answer the parcel-owner fallback used
+            to give from the other direction.
+          */}
+          {!kindInfo.titled ? (
+            <Section title="Tenure">
+              <Row label="Held as" value={unit.tenure ?? '—'} />
+              <p className="mt-1 text-[11px] leading-relaxed text-muted">
+                {unit.kind === 'parking'
+                  ? 'Allocated parking, appurtenant to a flat rather than '
+                    + 'separately titled. It has no ULPIN holder of its own.'
+                  : 'Common or structural space. It is not separately titled, '
+                    + 'so there is no holder, tenure or charge to report.'}
+              </p>
+            </Section>
+          ) : null}
+
+          {kindInfo.titled ? (
           <Section title="Title and charge">
             {/*
               The FLAT's holder, falling back to unknown rather than to the
@@ -1028,6 +1266,7 @@ export default function DetailPanel() {
             />
             <Row label="Parcel owner" value={detail.parcel?.owner ?? '—'} />
           </Section>
+          ) : null}
 
           {unit.mortgage ? (
             <Section title="Mortgage">

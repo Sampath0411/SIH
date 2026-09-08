@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { fetchLulcAt, type LulcResult } from './bhuvan';
 import type { SiteIndexEntry, SiteSpec } from './infra/types';
+import type { ClashFinding } from './topology';
 import {
   UNDERGROUND_DEFAULTS, categoryOfAssetType, type UtilityCategory,
 } from './underground/categories';
@@ -222,6 +223,22 @@ export interface ViewState {
 
   /** The mini-dashboard panel. */
   statsOpen: boolean;
+  /**
+   * The last topology run.
+   *
+   * `ranAt` is null until the button has been pressed once, which is how the
+   * panel tells "no findings" from "not asked yet" -- an empty list is a real
+   * and meaningful answer here, and showing it as though the question had
+   * never been put would throw away the only reassuring result the feature
+   * can give.
+   */
+  topology: {
+    running: boolean;
+    ranAt: string | null;
+    error: string | null;
+    findings: ClashFinding[];
+    selected: number | null;
+  };
 
   /**
    * Time of day for the sun, 6-18 local, or null for no sun at all.
@@ -302,6 +319,19 @@ export interface ViewState {
   failPhotoreal: (message: string) => void;
   dismissPhotorealError: () => void;
   setStatsOpen: (on: boolean) => void;
+  /**
+   * Run topology validation for the active project.
+   *
+   * Fires the request, stores the findings and highlights them. Deliberately
+   * NOT a layer toggle: `layers.*` are switches over data already loaded, and
+   * this one asks the server a question whose answer changes with every edit.
+   * Calling it again re-asks it, which is what the button is for.
+   */
+  runTopology: () => Promise<void>;
+  /** Drop the findings and their highlight. */
+  clearTopology: () => void;
+  /** Focus one finding: the panel scrolls to it, the layer pulses only it. */
+  selectFinding: (i: number | null) => void;
   setSunHour: (h: number | null) => void;
   /** Record who is signed in, once /api/me has answered. */
   setSession: (s: ViewState['session']) => void;
@@ -434,6 +464,9 @@ export const useViewStore = create<ViewState>((set) => ({
   buildingStyle: 'schematic',
   photorealError: null,
   statsOpen: false,
+  topology: {
+    running: false, ranAt: null, error: null, findings: [], selected: null,
+  },
   sunHour: SUN_DEFAULT_HOUR,
 
   selectBuilding: (id) =>
@@ -616,6 +649,64 @@ export const useViewStore = create<ViewState>((set) => ({
   dismissPhotorealError: () => set({ photorealError: null }),
 
   setStatsOpen: (on) => set({ statsOpen: on }),
+
+  /**
+   * Ask the server to validate the project's topology, now.
+   *
+   * Not cached anywhere on the way out or back: the endpoint sends
+   * `cache-control: no-store` and this action always issues the request. The
+   * button exists so a user can re-ask the question after an edit, and an
+   * answer served from a cache would be the one thing it must not give.
+   *
+   * `underground` is switched on with the result when anything was found. The
+   * findings are all below grade or inside a building envelope, and leaving
+   * the user looking at a city of rooftops with a red highlight buried under
+   * it would report the problem without showing it.
+   */
+  runTopology: async () => {
+    const slug = useViewStore.getState().projectSlug;
+    if (!slug) return;
+    set((s) => ({ topology: { ...s.topology, running: true, error: null } }));
+    try {
+      const res = await fetch(`/api/p/${slug}/topology`, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`validation failed (${res.status})`);
+      const doc = await res.json() as { ran_at?: string; findings?: ClashFinding[] };
+      const findings = Array.isArray(doc.findings) ? doc.findings : [];
+      set({
+        topology: {
+          running: false,
+          ranAt: doc.ran_at ?? new Date().toISOString(),
+          error: null,
+          findings,
+          selected: null,
+        },
+        ...(findings.length ? { underground: true } : {}),
+      });
+      // Utilities are what most findings are ABOUT, so the layer they live on
+      // has to be up for the highlight to sit on anything.
+      if (findings.length) {
+        set((s) => (s.layers.utilities
+          ? {}
+          : { layers: { ...s.layers, utilities: true } }));
+      }
+    } catch (err) {
+      set((s) => ({
+        topology: {
+          ...s.topology,
+          running: false,
+          error: err instanceof Error ? err.message : 'validation failed',
+        },
+      }));
+    }
+  },
+
+  clearTopology: () => set({
+    topology: {
+      running: false, ranAt: null, error: null, findings: [], selected: null,
+    },
+  }),
+
+  selectFinding: (i) => set((s) => ({ topology: { ...s.topology, selected: i } })),
   setSession: (s) => set({ session: s }),
   setSunHour: (h) =>
     set({ sunHour: h === null ? null : Math.max(SUN_MIN_HOUR, Math.min(SUN_MAX_HOUR, h)) }),

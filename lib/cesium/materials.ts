@@ -303,6 +303,59 @@ export const MATERIALS = {
     return tints[((slot % tints.length) + tints.length) % tints.length].withAlpha(alpha);
   },
 
+
+  /**
+   * A volume's tint by WHAT IT IS, for everything that is not a flat.
+   *
+   * The slot tints above answer "which of the four flats is mine", a question
+   * whose answer means nothing beyond "not the one next to it". On a basement
+   * or a retail floor the question is different and the answer does mean
+   * something: a titled shop, a parking bay nobody holds separately, the lift
+   * shaft, the way through. So these differ by KIND, and the split follows the
+   * palette rule the rest of this file keeps -- saturation is spent on meaning.
+   *
+   *   titled space   (retail, anchor)   warmer, and the anchor a step up,
+   *                                     because those are the volumes with a
+   *                                     lessee and a rent.
+   *   appurtenant    (parking)          cool and flat: real, allocated, but
+   *                                     not separately titled.
+   *   common space   (circulation,      the quietest things on the plate.
+   *                   atrium)           They are what is LEFT once the titled
+   *                                     volumes are taken, and drawing them as
+   *                                     loud as a shop would say a tenant
+   *                                     holds the corridor.
+   *   structure      (elevator, stair,  the most desaturated, and the only
+   *                   plant)            ones that read as building fabric
+   *                                     rather than as space anyone occupies.
+   *
+   * Returns null for 'flat', so the caller falls through to unitTint and the
+   * eighty flats in the demo tower keep exactly the colours they had.
+   */
+  unitKindTint: (
+    kind: string | undefined, alpha: number = FLOOR_VIEW.UNIT_ALPHA,
+  ): Cesium.Color | null => {
+    switch (kind) {
+      case 'retail':      return Cesium.Color.fromBytes(212, 199, 178).withAlpha(alpha);
+      case 'anchor':      return Cesium.Color.fromBytes(219, 196, 160).withAlpha(alpha);
+      case 'parking':     return Cesium.Color.fromBytes(180, 196, 206).withAlpha(alpha);
+      case 'atrium':      return Cesium.Color.fromBytes(198, 206, 202).withAlpha(alpha * 0.8);
+      case 'circulation': return Cesium.Color.fromBytes(188, 192, 194).withAlpha(alpha * 0.8);
+      case 'elevator':    return Cesium.Color.fromBytes(166, 172, 178).withAlpha(alpha);
+      case 'stair':       return Cesium.Color.fromBytes(174, 178, 170).withAlpha(alpha);
+      case 'plant':       return Cesium.Color.fromBytes(160, 160, 160).withAlpha(alpha);
+      default:            return null;   // 'flat' and anything unrecognised
+    }
+  },
+
+  /**
+   * Outline for a structural core.
+   *
+   * A shaft is a tall stack of identical boxes, one per level. Without a
+   * slightly brighter edge than a flat gets, the twenty-three segments of the
+   * lift core read as one smeared column when the stack is exploded.
+   */
+  unitCoreOutline: grey(196, 0.7),
+
   /**
    * The signed-in citizen's own flat: warm, saturated, unmistakable.
    *
