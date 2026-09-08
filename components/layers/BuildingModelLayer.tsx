@@ -4,7 +4,7 @@ import '@/lib/cesium/base-url';
 import * as Cesium from 'cesium';
 import { useEffect, useRef } from 'react';
 import { useViewer } from '../globe/CesiumRoot';
-import { useDataStore, useViewStore } from '@/lib/store';
+import { useDataStore, useEnsureDetail, useViewStore } from '@/lib/store';
 import { MATERIALS } from '@/lib/cesium/materials';
 import { toSceneZ } from '@/lib/cesium/terrain';
 import { flatLonLat } from '@/lib/geo';
@@ -37,7 +37,6 @@ import type { BuildingProps, UseType } from '@/lib/types';
  * is up, so the two layers never overlap on screen.
  */
 
-const FLOOR_H = 3.2;
 
 interface ModelState {
   explodeT: number;
@@ -51,6 +50,9 @@ export default function BuildingModelLayer() {
   const explodeT = useViewStore((s) => s.explodeT);
   const sunHour = useViewStore((s) => s.sunHour);
   const sliceEnabled = useViewStore((s) => s.slice.enabled);
+  // The cadastre's own floor rows, for the basement heights. Already being
+  // fetched for the floor ladder and the panel, so this costs no request.
+  const detail = useEnsureDetail(mode === 'building' ? activeBuildingId : null);
 
   const stateRef = useRef<ModelState>({ explodeT: 0 });
   /** Shared shadow mode -- see the note in BuildingsLayer. */
@@ -103,6 +105,21 @@ export default function BuildingModelLayer() {
     const terrainH = ground.get(activeBuildingId);
     const base = toSceneZ(props.ground_elev, props.ground_elev, terrainH);
     const fullTop = base + Math.max(2, props.height_m);
+    /**
+     * Storey height FROM THE RECORD, not a constant. The demo tower is 60 m
+     * over 20 storeys (3.0 m) with 4 m basements; at a flat 3.2 m the model's
+     * roof overshot the cadastre's by 4 m and its below-grade mass stopped
+     * 2.3 m short of B3. Above ground the height is what the register says
+     * divided by the storeys it says; below ground the cadastre's own floor
+     * rows are used where they have been fetched, and the storey height
+     * otherwise.
+     */
+    const FLOOR_H = props.floors > 0
+      ? Math.max(2.4, props.height_m / props.floors)
+      : 3.2;
+    const basementFloors = (detail?.floors ?? [])
+      .filter((f) => f.level_no < 0)
+      .sort((a, b) => b.level_no - a.level_no);
 
     // Explode lift for an above-ground storey (0-indexed). Matches
     // FloorStackLayer's easing so the model and the slab view agree.
@@ -199,12 +216,18 @@ export default function BuildingModelLayer() {
     const balconies = balconiesFor(use, ring, base, FLOOR_H, storeyCount, liftFor);
     for (const b of balconies) ds.entities.add(b);
     for (let b = 1; b <= props.basements; b++) {
-      const z0 = base - b * FLOOR_H;
+      const row = basementFloors[b - 1];
+      const z0 = row
+        ? toSceneZ(row.z_min, props.ground_elev, terrainH)
+        : base - b * FLOOR_H;
+      const z1 = row
+        ? toSceneZ(row.z_max, props.ground_elev, terrainH)
+        : z0 + FLOOR_H;
       ds.entities.add({
         polygon: {
           hierarchy: new Cesium.PolygonHierarchy(Cesium.Cartesian3.fromDegreesArray(flat)),
           height: z0,
-          extrudedHeight: z0 + FLOOR_H,
+          extrudedHeight: z1,
           // Basements are below grade: solid grey mass, and they stay put
           // when the above-ground storeys lift.
           material: MATERIALS.basementSlab,
@@ -434,7 +457,7 @@ export default function BuildingModelLayer() {
       if (!viewer.isDestroyed()) viewer.dataSources.remove(ds, true);
       dsRef.current = null;
     };
-  }, [viewer, ready, ground, buildings, activeBuildingId, mode, sliceEnabled]);
+  }, [viewer, ready, ground, buildings, activeBuildingId, mode, sliceEnabled, detail]);
 
   return null;
 }

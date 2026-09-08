@@ -10,11 +10,25 @@ import { liftFor } from '@/lib/cesium/explode';
 import { sectionedRing } from '@/lib/cesium/section';
 import { tagEntity } from '@/lib/cesium/tag';
 import { toSceneZ } from '@/lib/cesium/terrain';
-import { slicePlane, type HalfPlane } from '@/lib/geo';
+import { basementLift, depthBelowGround, depthCaption } from '@/lib/cesium/basement-lift';
+import { ringCentroid, slicePlane, type HalfPlane } from '@/lib/geo';
+import { levelLabel } from '@/lib/ulpin';
 
 /**
  * The active building's floor stack: one translucent slab per level, basements
  * in solid grey.
+ *
+ * AN ISOLATED BASEMENT IS LIFTED INTO THE LIGHT. Below grade the level sits
+ * inside the terrain, where the globe is opaque and the camera would have to
+ * go under the surface to see it; the user isolated B2 and saw a hillside.
+ * So when a basement is the isolated level (and the underground view, which
+ * has its own way of showing the ground, is off) its plate, shell and
+ * contents are drawn FLOOR_VIEW.BASEMENT_LIFT_CLEAR_M above the ground, in
+ * a cooler grey than a storey, with a ring at true ground level, a dashed
+ * tie-line down to where the plate really is, and a caption that quotes the
+ * stored depth. The lift is computed once, in lib/cesium/basement-lift.ts,
+ * and UnitsLayer and CameraDirector take the same number from the same
+ * function, so the bays stand on the plate and the camera frames it.
  *
  * ISOLATED LEVEL. A level that is isolated is drawn as TWO surfaces, not one:
  *
@@ -132,6 +146,58 @@ export default function FloorStackLayer() {
     });
 
     const floors = [...detail.floors].sort((a, b) => a.level_no - b.level_no);
+    const groundZ = toSceneZ(bprops.ground_elev, bprops.ground_elev, terrainH);
+    const topLevel = Math.max(...floors.map((f) => f.level_no));
+
+    // ---- ground-level ring, for the lifted basements ----------------------
+    // One ring for the building, drawn at the true ground surface around the
+    // footprint while any basement is lifted above it. It is the datum the
+    // caption's depth is measured from, and the reason the lifted plate reads
+    // as "brought up" rather than as another storey.
+    const anyBasementLifted = () => {
+      const s = stateRef.current;
+      return s.visible && !s.underground && s.isolated !== null && s.isolated < 0;
+    };
+    {
+      const fp = (detail.building.footprint.coordinates as number[][][])[0];
+      if (fp && fp.length >= 4) {
+        const ringZ = groundZ + 0.06;
+        const flat: number[] = [];
+        for (const [x, y] of fp) flat.push(x, y, ringZ);
+        ds.entities.add({
+          polyline: {
+            positions: Cesium.Cartesian3.fromDegreesArrayHeights(flat),
+            width: 2.5,
+            material: new Cesium.ColorMaterialProperty(MATERIALS.groundRing),
+            clampToGround: false,
+            show: new Cesium.CallbackProperty(anyBasementLifted, false),
+          },
+        });
+        // Its caption, at the north-east corner so it does not fight the
+        // depth caption on the south edge.
+        let ne = fp[0];
+        for (const p of fp) if (p[0] + p[1] > ne[0] + ne[1]) ne = p;
+        ds.entities.add({
+          position: Cesium.Cartesian3.fromDegrees(ne[0], ne[1], ringZ),
+          label: {
+            text: 'Ground level',
+            font: FLOOR_VIEW.LABEL_BAY_FONT,
+            style: Cesium.LabelStyle.FILL,
+            fillColor: MATERIALS.unitLabelFill,
+            showBackground: true,
+            backgroundColor: MATERIALS.depthLabelBg,
+            backgroundPadding: new Cesium.Cartesian2(
+              FLOOR_VIEW.LABEL_PADDING_PX[0], FLOOR_VIEW.LABEL_PADDING_PX[1],
+            ),
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            horizontalOrigin: Cesium.HorizontalOrigin.LEFT,
+            pixelOffset: new Cesium.Cartesian2(6, -6),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            show: new Cesium.CallbackProperty(anyBasementLifted, false),
+          },
+        });
+      }
+    }
 
     floors.forEach((fl, index) => {
       const ring = (fl.ring.coordinates as number[][][])[0];
@@ -142,13 +208,23 @@ export default function FloorStackLayer() {
       const isBasement = fl.level_no < 0;
       const level = fl.level_no;
 
+      /** This basement is the isolated level and is being shown above ground. */
+      const liftedBasement = () => {
+        const s = stateRef.current;
+        return isBasement && s.isolated === level && !s.underground;
+      };
       // Basements must not lift with the explode slider: they are below grade
-      // and lifting them through the ground reads as a rendering fault.
-      const lift = () => (isBasement ? 0 : liftFor(index, stateRef.current.explodeT));
-      const isolated = () => stateRef.current.isolated === level && !isBasement;
+      // and lifting them through the ground reads as a rendering fault. The
+      // one lift they take is the isolate lift, into the light.
+      const lift = () => (isBasement
+        ? (liftedBasement() ? basementLift(z0, groundZ, FLOOR_VIEW.BASEMENT_LIFT_CLEAR_M) : 0)
+        : liftFor(index, stateRef.current.explodeT));
+      const isolated = () => stateRef.current.isolated === level
+        && (!isBasement || liftedBasement());
       /** Drawn as the thin base plate the flats stand on, rather than as a slab. */
-      const asPlate = () => !isBasement
-        && (stateRef.current.isolated === level || stateRef.current.plateAll);
+      const asPlate = () => (isBasement
+        ? liftedBasement()
+        : (stateRef.current.isolated === level || stateRef.current.plateAll));
 
       // ---- slab / base plate ------------------------------------------------
       const slab = sectionedRing(ring, readSection);
@@ -166,7 +242,9 @@ export default function FloorStackLayer() {
           }, false),
           material: new Cesium.ColorMaterialProperty(
             new Cesium.CallbackProperty(() => {
-              if (isBasement) return MATERIALS.basementSlab;
+              if (isBasement) {
+                return liftedBasement() ? MATERIALS.basementPlate : MATERIALS.basementSlab;
+              }
               if (asPlate()) return MATERIALS.floorPlate;
               return MATERIALS.floorSlab;
             }, false),
@@ -202,7 +280,9 @@ export default function FloorStackLayer() {
           hierarchy: shell.hierarchy,
           height: new Cesium.CallbackProperty(() => z0 + lift(), false),
           extrudedHeight: new Cesium.CallbackProperty(() => z1 + lift(), false),
-          material: new Cesium.ColorMaterialProperty(MATERIALS.floorShell),
+          material: new Cesium.ColorMaterialProperty(
+            isBasement ? MATERIALS.basementShell : MATERIALS.floorShell,
+          ),
           outline: true,
           outlineColor: MATERIALS.floorShellOutline,
           shadows: Cesium.ShadowMode.DISABLED,
@@ -238,7 +318,7 @@ export default function FloorStackLayer() {
           material: new Cesium.ColorMaterialProperty(
             new Cesium.CallbackProperty(
               () => (isolated()
-                ? MATERIALS.floorActiveOutline
+                ? (isBasement ? MATERIALS.basementRim : MATERIALS.floorActiveOutline)
                 : Cesium.Color.TRANSPARENT),
               false,
             ),
@@ -246,6 +326,60 @@ export default function FloorStackLayer() {
           clampToGround: false,
         },
       });
+
+      // ---- depth indicator, basements only --------------------------------
+      // A dashed tie-line from the LIFTED plate's south edge straight down to
+      // where the level really is, and a caption at the top of it quoting the
+      // stored depth. The line is what makes the lift honest: the plate is up
+      // here, and this is how far down it actually sits.
+      if (isBasement) {
+        const c = ringCentroid(ring);
+        let south = ring[0][1];
+        for (const p of ring) if (p[1] < south) south = p[1];
+        const tieLon = c.lon;
+        const tieLat = south;
+        const depthM = depthBelowGround(bprops.ground_elev, fl.z_min);
+        ds.entities.add({
+          polyline: {
+            positions: new Cesium.CallbackProperty(() => {
+              const top = z0 + lift();
+              return Cesium.Cartesian3.fromDegreesArrayHeights([
+                tieLon, tieLat, top,
+                tieLon, tieLat, z0,
+              ]);
+            }, false) as unknown as Cesium.PositionProperty,
+            width: 2,
+            material: new Cesium.PolylineDashMaterialProperty({
+              color: MATERIALS.depthLine,
+              dashLength: 12,
+            }),
+            clampToGround: false,
+            show: new Cesium.CallbackProperty(() => liftedBasement() && slab.survives(), false),
+          },
+        });
+        ds.entities.add({
+          position: new Cesium.CallbackProperty(
+            () => Cesium.Cartesian3.fromDegrees(tieLon, tieLat, z0 + lift() + 0.2),
+            false,
+          ) as unknown as Cesium.PositionProperty,
+          label: {
+            text: depthCaption(levelLabel(level, topLevel), depthM),
+            font: FLOOR_VIEW.LABEL_FONT,
+            style: Cesium.LabelStyle.FILL,
+            fillColor: MATERIALS.unitLabelFill,
+            showBackground: true,
+            backgroundColor: MATERIALS.depthLabelBg,
+            backgroundPadding: new Cesium.Cartesian2(
+              FLOOR_VIEW.LABEL_PADDING_PX[0], FLOOR_VIEW.LABEL_PADDING_PX[1],
+            ),
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            pixelOffset: new Cesium.Cartesian2(0, -8),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            show: new Cesium.CallbackProperty(() => liftedBasement() && slab.survives(), false),
+          },
+        });
+      }
     });
 
     return () => {

@@ -10,8 +10,11 @@ import { liftFor } from '@/lib/cesium/explode';
 import { sectionedRing } from '@/lib/cesium/section';
 import { tagEntity } from '@/lib/cesium/tag';
 import { toSceneZ } from '@/lib/cesium/terrain';
+import { basementLift } from '@/lib/cesium/basement-lift';
+import { coreBarText, coreOf, type CoreSpan } from '@/lib/cesium/cores';
 import { insetRing, ringCentroid, slicePlane, type HalfPlane } from '@/lib/geo';
-import type { Mode } from '@/lib/types';
+import { levelLabel } from '@/lib/ulpin';
+import type { Mode, UnitInfo } from '@/lib/types';
 
 /**
  * Unit volumes -- the individual flats.
@@ -55,6 +58,17 @@ interface UnitState {
   /** Bumped whenever the section plane moves; see lib/cesium/section.ts. */
   sliceVersion: number;
   plane: HalfPlane | null;
+  /**
+   * The core the selected unit belongs to, if it is a core segment.
+   *
+   * While set, the per-level segments of that core hide and ONE full-height
+   * bar stands in their place (see the core bars below): a lift shaft is a
+   * shaft, and twenty-three stacked boxes selected one at a time never read
+   * as one. Null for a flat, a bay, or nothing selected.
+   */
+  selectedCore: CoreSpan | null;
+  /** Segment ids of `selectedCore`, for the per-frame hide test. */
+  hiddenSegments: Set<number>;
   /**
    * Re-arm the rAF driver from the store-sync effect when a fadeTarget
    * change arrives while the driver is parked. Set by the rAF effect
@@ -114,8 +128,11 @@ export default function UnitsLayer() {
     anySelected: false, explodeT: 0, sliced: false, underground: false,
     fade: 0, fadeTarget: 0,
     sliceVersion: 0, plane: null, armFade: null,
+    selectedCore: null, hiddenSegments: new Set(),
   });
   const dsRef = useRef<Cesium.CustomDataSource | null>(null);
+  /** The core bars, by core_ref, so the sync effect can re-tag the active one. */
+  const barsRef = useRef<Map<string, Cesium.Entity>>(new Map());
 
   const footprint = buildings?.features.find(
     (f) => f.properties.id === activeBuildingId,
@@ -132,6 +149,28 @@ export default function UnitsLayer() {
     s.explodeT = explodeT;
     s.sliced = slice.enabled;
     s.underground = underground;
+    // Which core, if any, the selection is a segment of. Resolved here, once
+    // per selection change, so the per-frame show callbacks only test a Set.
+    const core = detail && selectedUnitId !== null
+      ? coreOf(detail.units, selectedUnitId)
+      : null;
+    if (core?.core_ref !== s.selectedCore?.core_ref) {
+      s.selectedCore = core;
+      s.hiddenSegments = new Set(core?.segmentIds ?? []);
+      if (viewer && !viewer.isDestroyed()) viewer.scene.requestRender();
+    }
+    // The bar answers a click AS the segment that was selected, on the level
+    // that is isolated, so re-clicking it keeps the selection where it is
+    // rather than jumping to the shaft's lowest level.
+    if (core) {
+      const bar = barsRef.current.get(core.core_ref);
+      if (bar) {
+        tagEntity(bar, {
+          kind: 'unit', id: selectedUnitId as number,
+          level: isolatedFloor ?? core.lowest,
+        });
+      }
+    }
     // Underground, this layer used to go to zero: when a unit could only be a
     // flat, every one of them stood over the thing being inspected and was
     // pure clutter. Now the basements hold the parking bays and the lower
@@ -152,7 +191,7 @@ export default function UnitsLayer() {
       s.armFade?.();
     }
   }, [mode, isolatedFloor, selectedUnitId, hoveredUnitId, explodeT,
-      slice.enabled, showFloors, underground]);
+      slice.enabled, showFloors, underground, detail, viewer]);
 
   // The section plane comes from the active footprint, so the flats are cut by
   // exactly the plane the floor plate and shell are cut by.
@@ -185,6 +224,39 @@ export default function UnitsLayer() {
 
     const floors = [...detail.floors].sort((a, b) => a.level_no - b.level_no);
     const byLevel = new Map(floors.map((f, i) => [f.level_no, { f, index: i }]));
+    const groundZ = toSceneZ(bprops.ground_elev, bprops.ground_elev, terrainH);
+    const topLevel = Math.max(...floors.map((f) => f.level_no));
+    const labelPadding = new Cesium.Cartesian2(
+      FLOOR_VIEW.LABEL_PADDING_PX[0], FLOOR_VIEW.LABEL_PADDING_PX[1],
+    );
+    const bayPadding = new Cesium.Cartesian2(
+      FLOOR_VIEW.LABEL_BAY_PADDING_PX[0], FLOOR_VIEW.LABEL_BAY_PADDING_PX[1],
+    );
+
+    /**
+     * What a volume's label says, or null for a volume that gets none.
+     *
+     * A flat and a bay are read by their number. Common space is read by
+     * what it is. A core segment gets NOTHING: two 'EV'/'ST' tags at the
+     * centre of every plate were half of the "blur in the middle", and the
+     * shaft is named once, on the bar, when it is selected. An aisle is
+     * paint, and paint is not labelled.
+     */
+    const labelTextFor = (u: UnitInfo): string | null => {
+      const kind = u.kind ?? 'flat';
+      if (u.core_ref) return null;
+      switch (kind) {
+        case 'flat': return u.unit_no;
+        // The number painted on the bay: '105', not 'P-105'. The prefix is
+        // the register's; the paint on a car park floor is the number.
+        case 'parking': return u.unit_no.replace(/^P-/, '');
+        case 'circulation': return u.level_no < 0 ? null : 'Lobby';
+        case 'plant': return 'Plant';
+        case 'retail': case 'anchor': return u.label ?? u.unit_no;
+        case 'atrium': return u.label ?? 'Atrium';
+        default: return u.label ?? u.unit_no;
+      }
+    };
 
     /**
      * Each flat's slot on its own plate, so neighbours never share a tint.
@@ -234,7 +306,21 @@ export default function UnitsLayer() {
       // On the plate: clear of it by UNIT_LIFT_M so the seam under the flat is
       // visible and the two surfaces cannot z-fight.
       const onPlate = floorZ0 + FLOOR_VIEW.PLATE_THICKNESS_M + FLOOR_VIEW.UNIT_LIFT_M;
-      const boxHeight = Math.max(FLOOR_VIEW.UNIT_MIN_HEIGHT_M, unitZ1 - onPlate);
+      const kind = unit.kind ?? 'flat';
+      // A drive aisle is painted on the plate, not built on it.
+      const isPaint = kind === 'circulation' && level < 0;
+      const boxHeight = isPaint
+        ? FLOOR_VIEW.AISLE_PAINT_M
+        : Math.max(FLOOR_VIEW.UNIT_MIN_HEIGHT_M, unitZ1 - onPlate);
+      /**
+       * The isolate lift for a basement: the same number FloorStackLayer
+       * moves the plate by, from the same function, so the bays stand on it.
+       */
+      const basementUp = (): number => {
+        const s = stateRef.current;
+        if (level >= 0 || s.isolated !== level || s.underground) return 0;
+        return basementLift(floorZ0, groundZ, FLOOR_VIEW.BASEMENT_LIFT_CLEAR_M);
+      };
 
       /**
        * Where this flat's base sits, and how far it rides the explode slider.
@@ -257,6 +343,7 @@ export default function UnitsLayer() {
         if (s.mode === 'building' && !s.sliced) {
           return floorZ1 + FLOOR_VIEW.UNIT_LIFT_M + liftFor(level, s.explodeT);
         }
+        if (level < 0) return onPlate + basementUp();
         return onPlate + liftFor(entry.index, s.explodeT);
       };
 
@@ -274,6 +361,10 @@ export default function UnitsLayer() {
       const onScreen = (): boolean => {
         const s = stateRef.current;
         if (s.fade <= 0.02) return false;
+        // The selected core's segments give way to the bar -- except on the
+        // exploded stack, which is per level by construction and where the
+        // segments riding their storeys is the point.
+        if (unit.core_ref && s.mode !== 'building' && s.hiddenSegments.has(uid)) return false;
         // Underground, the below-grade volumes ARE the subject -- the parking
         // bays and the part of each core below grade -- and the above-ground
         // flats are the clutter. This is the mirror of the fade rule in
@@ -290,12 +381,15 @@ export default function UnitsLayer() {
       };
 
       const centre = ringCentroid(ring);
+      const labelText = labelTextFor(unit);
 
       const entity = ds.entities.add({
-        // Carried for the label; the polygon has its own hierarchy.
+        // Carried for the label; the polygon has its own hierarchy. ON THE
+        // TOP FACE, not at mid-height: a code floating inside a translucent
+        // box was read through the box, and read as a smudge.
         position: new Cesium.CallbackProperty(
           () => Cesium.Cartesian3.fromDegrees(
-            centre.lon, centre.lat, baseZ() + boxHeight * 0.5,
+            centre.lon, centre.lat, baseZ() + boxHeight + FLOOR_VIEW.LABEL_TOP_LIFT_M,
           ),
           false,
         ) as unknown as Cesium.PositionProperty,
@@ -316,6 +410,7 @@ export default function UnitsLayer() {
               // as a real floor and the citizen's own flat reads as the one
               // thing on it that is theirs.
               if (unit.restricted) return MATERIALS.unitRestricted(a);
+              if (isPaint) return MATERIALS.aislePaint.withAlpha(0.9 * s.fade);
               if (s.selectedId === uid) return MATERIALS.unitSelected(a);
               if (s.hoveredId === uid) return MATERIALS.unitHover(a);
               // A parking bay, a shop, an atrium or a core is coloured by what
@@ -326,7 +421,7 @@ export default function UnitsLayer() {
           ),
           // The selected unit gets a silhouette outline, so it reads as chosen
           // even where it is occluded by neighbouring units.
-          outline: true,
+          outline: !isPaint,
           outlineWidth: 2,
           outlineColor: new Cesium.CallbackProperty(
             () => {
@@ -334,9 +429,11 @@ export default function UnitsLayer() {
               if (unit.core_ref && stateRef.current.selectedId !== uid) {
                 return MATERIALS.unitCoreOutline;
               }
-              return stateRef.current.selectedId === uid
-                ? MATERIALS.unitOutline
-                : MATERIALS.unitOutlineIdle;
+              if (stateRef.current.selectedId === uid) return MATERIALS.unitOutline;
+              // A bay's painted line: bright, so forty of them read as a
+              // marked-out car park rather than as a grey slab.
+              if (kind === 'parking') return MATERIALS.bayOutline;
+              return MATERIALS.unitOutlineIdle;
             },
             false,
           ),
@@ -346,39 +443,52 @@ export default function UnitsLayer() {
             false,
           ),
         },
-        label: {
-          text: unit.unit_no,
-          font: FLOOR_VIEW.LABEL_FONT,
-          style: Cesium.LabelStyle.FILL_AND_OUTLINE,
-          fillColor: MATERIALS.unitLabelFill,
-          outlineColor: MATERIALS.unitLabelOutline,
-          outlineWidth: FLOOR_VIEW.LABEL_OUTLINE_PX,
-          verticalOrigin: Cesium.VerticalOrigin.CENTER,
-          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
-          // Declutter: past this the flats are a few pixels across and their
-          // codes are a smear. Enforced by Cesium against the label's own
-          // position, so it costs nothing per frame.
-          distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
-            0, FLOOR_VIEW.LABEL_MAX_DISTANCE_M,
-          ),
-          // Full size up close, easing down to LABEL_SCALE_FAR at the cap, so
-          // the codes thin out on approach to it rather than all disappearing
-          // on one frame. Same idiom as the parcel numbers.
-          scaleByDistance: new Cesium.NearFarScalar(
-            FLOOR_VIEW.LABEL_SCALE_NEAR_M, 1.0,
-            FLOOR_VIEW.LABEL_MAX_DISTANCE_M, FLOOR_VIEW.LABEL_SCALE_FAR,
-          ),
-          // The flats sit inside a translucent shell; without this the codes
-          // disappear behind it at grazing angles.
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          show: new Cesium.CallbackProperty(() => {
-            const s = stateRef.current;
-            if (!onScreen() || !section.survives()) return false;
-            // Every code on an isolated floor; on the exploded stack only the
-            // flat under the cursor, or 27 codes fight for the same pixels.
-            return s.mode !== 'building' || s.hoveredId === uid;
-          }, false),
-        },
+        ...(labelText === null ? {} : {
+          label: {
+            text: labelText,
+            font: kind === 'parking' ? FLOOR_VIEW.LABEL_BAY_FONT : FLOOR_VIEW.LABEL_FONT,
+            // Plain fill on a solid pill. The 3px halo this used to wear is
+            // what turned a 13px code into a dark smear.
+            style: Cesium.LabelStyle.FILL,
+            fillColor: MATERIALS.unitLabelFill,
+            showBackground: true,
+            backgroundColor: new Cesium.CallbackProperty(() => {
+              const s = stateRef.current;
+              if (isOwn()) return MATERIALS.unitLabelBgOwn;
+              return s.hoveredId === uid || s.selectedId === uid
+                ? MATERIALS.unitLabelBgHover
+                : MATERIALS.unitLabelBg;
+            }, false),
+            backgroundPadding: kind === 'parking' ? bayPadding : labelPadding,
+            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+            horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+            // Declutter: past this the flats are a few pixels across and their
+            // codes are a smear. Enforced by Cesium against the label's own
+            // position, so it costs nothing per frame.
+            distanceDisplayCondition: new Cesium.DistanceDisplayCondition(
+              0, kind === 'parking'
+                ? FLOOR_VIEW.LABEL_BAY_MAX_DISTANCE_M
+                : FLOOR_VIEW.LABEL_MAX_DISTANCE_M,
+            ),
+            // Full size up close, easing down to LABEL_SCALE_FAR at the cap, so
+            // the codes thin out on approach to it rather than all disappearing
+            // on one frame. Same idiom as the parcel numbers.
+            scaleByDistance: new Cesium.NearFarScalar(
+              FLOOR_VIEW.LABEL_SCALE_NEAR_M, 1.0,
+              FLOOR_VIEW.LABEL_MAX_DISTANCE_M, FLOOR_VIEW.LABEL_SCALE_FAR,
+            ),
+            // The flats sit inside a translucent shell; without this the codes
+            // disappear behind it at grazing angles.
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            show: new Cesium.CallbackProperty(() => {
+              const s = stateRef.current;
+              if (!onScreen() || !section.survives()) return false;
+              // Every code on an isolated floor; on the exploded stack only the
+              // flat under the cursor, or 27 codes fight for the same pixels.
+              return s.mode !== 'building' || s.hoveredId === uid;
+            }, false),
+          },
+        }),
       });
       // A restricted flat is deliberately left UNTAGGED.
       //
@@ -392,16 +502,86 @@ export default function UnitsLayer() {
       // Selection is defended twice over regardless: the neighbour arrives
       // with no registry data, so there is nothing for the panel to show even
       // if a selection did somehow land on it.
-      if (!unit.restricted) {
+      // Paint is not a thing to click either: a click on an aisle is a click
+      // on the level, exactly as the plate under it resolves.
+      if (!unit.restricted && !isPaint) {
         // `level` travels with the tag so a click on the exploded stack can
         // isolate the floor and select the flat in ONE store write.
         tagEntity(entity, { kind: 'unit', id: uid, level });
       }
     }
 
+    // ---- the core bars ----------------------------------------------------
+    // One full-height solid per core, from the lowest segment's base to the
+    // highest segment's top, in place of the per-level boxes while a segment
+    // of that core is selected. Built here, once, and shown by the same
+    // stateRef the segments hide by, so the swap is one frame.
+    barsRef.current.clear();
+    const coreRefs = [...new Set(detail.units.map((u) => u.core_ref).filter(Boolean))] as string[];
+    for (const ref of coreRefs) {
+      const span = coreOf(detail.units, detail.units.find((u) => u.core_ref === ref)?.id ?? null);
+      const seg = detail.units.find((u) => u.core_ref === ref);
+      if (!span || !seg) continue;
+      const stored = (seg.ring.coordinates as number[][][])[0];
+      if (stored.length < 4) continue;
+      const ring = insetRing(stored, FLOOR_VIEW.UNIT_INSET_M);
+      const c = ringCentroid(ring);
+      const z0 = toSceneZ(span.z_min, bprops.ground_elev, terrainH);
+      const z1 = toSceneZ(span.z_max, bprops.ground_elev, terrainH);
+      const barShown = (): boolean => {
+        const s = stateRef.current;
+        return s.fade > 0.02 && !s.underground && s.mode !== 'building'
+          && s.selectedCore?.core_ref === ref;
+      };
+      const text = `${coreBarText(span.kind)} · `
+        + `${levelLabel(span.lowest, topLevel)}–${levelLabel(span.highest, topLevel)}`;
+      // The label rides the bar at MID-HEIGHT, not on top: the camera frames
+      // the shaft's centre, and a 71 m bar's roof end is out of the shot.
+      const bar = ds.entities.add({
+        position: Cesium.Cartesian3.fromDegrees(c.lon, c.lat, (z0 + z1) / 2),
+        polygon: {
+          hierarchy: new Cesium.PolygonHierarchy(
+            Cesium.Cartesian3.fromDegreesArray(ring.flatMap(([x, y]) => [x, y])),
+          ),
+          height: z0,
+          extrudedHeight: z1,
+          material: new Cesium.ColorMaterialProperty(
+            new Cesium.CallbackProperty(
+              () => MATERIALS.coreBar(span.kind, 0.92 * stateRef.current.fade),
+              false,
+            ),
+          ),
+          outline: true,
+          outlineWidth: 2,
+          outlineColor: MATERIALS.coreBarOutline,
+          shadows: Cesium.ShadowMode.DISABLED,
+          show: new Cesium.CallbackProperty(barShown, false),
+        },
+        label: {
+          text,
+          font: FLOOR_VIEW.LABEL_CORE_FONT,
+          style: Cesium.LabelStyle.FILL,
+          fillColor: MATERIALS.unitLabelFill,
+          showBackground: true,
+          backgroundColor: MATERIALS.coreLabelBg,
+          backgroundPadding: labelPadding,
+          verticalOrigin: Cesium.VerticalOrigin.CENTER,
+          horizontalOrigin: Cesium.HorizontalOrigin.CENTER,
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          show: new Cesium.CallbackProperty(barShown, false),
+        },
+      });
+      // Tagged as the first segment until the sync effect re-tags it as the
+      // one actually selected; either way a click on the bar is a click on
+      // the core, never on the plate behind it.
+      tagEntity(bar, { kind: 'unit', id: seg.id, level: span.lowest });
+      barsRef.current.set(ref, bar);
+    }
+
     return () => {
       if (!viewer.isDestroyed()) viewer.dataSources.remove(ds, true);
       dsRef.current = null;
+      barsRef.current.clear();
     };
   }, [viewer, ready, ground, detail, activeBuildingId, footprint]);
 

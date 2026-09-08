@@ -7,6 +7,9 @@ import { useViewer } from './CesiumRoot';
 import { useActiveDetail, useDataStore, useViewStore } from '@/lib/store';
 import { toSceneZ } from '@/lib/cesium/terrain';
 import { frameHeightFor } from '@/lib/cesium/setup';
+import { basementLift } from '@/lib/cesium/basement-lift';
+import { coreOf } from '@/lib/cesium/cores';
+import { FLOOR_VIEW } from '@/lib/cesium/materials';
 import { ringCentreWithRadius } from '@/lib/geo';
 
 /**
@@ -269,25 +272,73 @@ export default function CameraDirector() {
     const terrainH = ground.get(props.id);
     const baseZ = toSceneZ(props.ground_elev, props.ground_elev, terrainH);
 
+    /**
+     * How far the isolated level has been lifted, if it is a basement being
+     * shown above ground. The same function FloorStackLayer moves the plate
+     * by, so the camera arrives where the plate is drawn, not where it is
+     * stored -- which is under the terrain.
+     */
+    const isolateLift = (levelNo: number, zMin: number): number => {
+      if (levelNo >= 0 || underground) return 0;
+      return basementLift(
+        toSceneZ(zMin, props.ground_elev, terrainH), baseZ,
+        FLOOR_VIEW.BASEMENT_LIFT_CLEAR_M,
+      );
+    };
+
     // ---- UNIT ------------------------------------------------------------
     if (mode === 'unit' && selectedUnitId != null && detail) {
       const unit = detail.units.find((u) => u.id === selectedUnitId);
+      // A core segment stands in for the whole shaft: frame the bar the
+      // viewer draws in its place, B2 to the roof, not one storey of it.
+      const core = coreOf(detail.units, selectedUnitId);
+      if (unit && core) {
+        const uc = ringCentreWithRadius((unit.ring.coordinates as number[][][])[0]);
+        const z0 = toSceneZ(core.z_min, props.ground_elev, terrainH);
+        const z1 = toSceneZ(core.z_max, props.ground_elev, terrainH);
+        const centre = Cesium.Cartesian3.fromDegrees(uc.lon, uc.lat, (z0 + z1) / 2);
+        const sphereRadius = Math.max((z1 - z0) * 0.55, uc.radius, 12);
+        if (
+          Number.isFinite(centre.x) && Number.isFinite(centre.y)
+          && Number.isFinite(centre.z) && Number.isFinite(sphereRadius)
+        ) {
+          camera.flyToBoundingSphere(new Cesium.BoundingSphere(centre, sphereRadius), {
+            duration: FLY_MS,
+            offset: new Cesium.HeadingPitchRange(
+              Cesium.Math.toRadians(35),
+              Cesium.Math.toRadians(-14),
+              sphereRadius * 2.6,
+            ),
+          });
+          return;
+        }
+      }
       if (unit) {
         const uc = ringCentreWithRadius((unit.ring.coordinates as number[][][])[0]);
-        const z = toSceneZ((unit.z_min + unit.z_max) / 2, props.ground_elev, terrainH);
+        const fl = detail.floors.find((f) => f.level_no === unit.level_no);
+        const z = toSceneZ((unit.z_min + unit.z_max) / 2, props.ground_elev, terrainH)
+          + isolateLift(unit.level_no, fl?.z_min ?? unit.z_min);
         flyToPose(camera, poseFor(uc.lon, uc.lat, z, Math.max(28, uc.radius * 2.2), -24));
         return;
       }
     }
 
     // ---- FLOOR -----------------------------------------------------------
-    // Drop to the level and look across it, nearly level with the slab.
+    // Drop to the level and look across it, nearly level with the slab. A
+    // basement is framed where it is DRAWN -- lifted above ground -- and
+    // from a little higher, so the ground ring and the tie-line are in shot.
     if (mode === 'floor' && isolatedFloor != null && detail) {
       const fl = detail.floors.find((f) => f.level_no === isolatedFloor);
       const z = fl
         ? toSceneZ((fl.z_min + fl.z_max) / 2, props.ground_elev, terrainH)
+          + isolateLift(fl.level_no, fl.z_min)
         : baseZ;
-      flyToPose(camera, poseFor(lon, lat, z, Math.max(34, radius * 1.6), -16));
+      const basement = isolatedFloor < 0 && !underground;
+      flyToPose(camera, poseFor(
+        lon, lat, z,
+        Math.max(basement ? 42 : 34, radius * (basement ? 1.9 : 1.6)),
+        basement ? -26 : -16,
+      ));
       return;
     }
 

@@ -133,23 +133,46 @@ export const FLOOR_VIEW = {
   UNIT_DIM_ALPHA: 0.45,
 
   /** Unit code labels are decluttered beyond this camera distance, metres. */
-  LABEL_MAX_DISTANCE_M: 250,
+  LABEL_MAX_DISTANCE_M: 320,
 
   /**
    * The unit code's own type.
    *
-   * Sized one step up from the 12px it was, because these codes are the
-   * smallest text in the scene AND the only text a citizen is asked to read
-   * a specific value off -- "is this 903 or 908" is the whole interaction.
+   * These codes are the only text a citizen is asked to read a specific
+   * value off -- "is this 903 or 908" is the whole interaction -- and they
+   * used to be the smallest text in the scene: 13px, wrapped in a 3px black
+   * halo, floating at the flat's mid-height and composited through the
+   * translucent box around it. At the floor pose that rasterised into a
+   * dark smudge in the middle of every flat.
    *
-   * Sharpness is not a font-size problem though: labels rasterise into
-   * Cesium's atlas at the DRAWING BUFFER's resolution, so on a high-DPI
-   * display they were being drawn into a 1x buffer and stretched. That is
-   * fixed in lib/cesium/perf.ts; this only makes the glyphs a comfortable
-   * size once they are actually sharp.
+   * Now: a heavier face, NO halo (the outline is what filled the counters),
+   * and a solid pill behind the glyphs instead -- the same device the
+   * survey sheet uses for a number over busy ground. The label sits ON the
+   * top face of the flat (LABEL_TOP_LIFT_M above it), so it is read against
+   * the plate, not through the volume.
+   *
+   * Sharpness is not only a font-size problem: labels rasterise into
+   * Cesium's atlas at the DRAWING BUFFER's resolution, so a resolutionScale
+   * below 1 stretches them. lib/cesium/perf.ts holds the scale at 1 on a
+   * capable GPU; the size here is what makes the glyphs comfortable once
+   * they are actually sharp.
    */
-  LABEL_FONT: '600 13px ui-sans-serif, system-ui, sans-serif',
-  LABEL_OUTLINE_PX: 3,
+  LABEL_FONT: '700 17px ui-sans-serif, system-ui, sans-serif',
+  /**
+   * Bay numbers: forty on a plate at 2.4 m centres, so small, tight, and
+   * gone beyond LABEL_BAY_MAX_DISTANCE_M -- past that they overprint into
+   * one strip, which is the smear the flats' cap exists to prevent.
+   */
+  LABEL_BAY_FONT: '700 11px ui-sans-serif, system-ui, sans-serif',
+  LABEL_BAY_PADDING_PX: [3, 2] as const,
+  LABEL_BAY_MAX_DISTANCE_M: 110,
+  /** The full-height core bar's one label. */
+  LABEL_CORE_FONT: '700 15px ui-sans-serif, system-ui, sans-serif',
+  LABEL_OUTLINE_PX: 0,
+  /** Padding inside the pill, px: [horizontal, vertical]. */
+  LABEL_PADDING_PX: [7, 4] as const,
+  /** How far above the volume's top face the label anchors, metres. */
+  LABEL_TOP_LIFT_M: 0.35,
 
   /**
    * Codes shrink with distance instead of holding full size to
@@ -157,10 +180,35 @@ export const FLOOR_VIEW = {
    * SURVEY_PARCEL_VIEW gives parcel numbers, for the same reason: a floor
    * plate covered in full-size codes at the far end of the range is the
    * "smear" the distance cap exists to prevent, and shrinking gets there
-   * gradually rather than as a cliff.
+   * gradually rather than as a cliff. The far scale is kept high enough that
+   * a 17px face never drops under ~14px inside the floor pose.
    */
   LABEL_SCALE_NEAR_M: 60,
-  LABEL_SCALE_FAR: 0.65,
+  LABEL_SCALE_FAR: 0.85,
+
+  /**
+   * An isolated BASEMENT is lifted so its base sits this far above the
+   * ground, metres.
+   *
+   * Below grade the level is inside the terrain: the globe is opaque, the
+   * camera flew to a point under the surface, and the user saw a plate
+   * through a hillside, or nothing. Underground mode exists for the buried
+   * services and turns the ground translucent on purpose; a basement plan
+   * is a different question, and the honest answer is to bring the level
+   * up into the light and SAY how far down it really is. The lift is
+   * presentation only: the stored geometry, the API, the section and the
+   * explode slider are untouched, and the depth indicator beside the lifted
+   * plate quotes the true depth from the stored z.
+   */
+  BASEMENT_LIFT_CLEAR_M: 1.5,
+
+  /**
+   * Basement circulation -- the drive aisles -- is drawn as PAINT on the
+   * plate, this tall, rather than as a box. A box the size of an aisle would
+   * hide the bays behind it, which was the reason the aisle used to be left
+   * out of the data altogether.
+   */
+  AISLE_PAINT_M: 0.05,
 
   /**
    * Explode fractions (0-1 of the slider) between which units fade in on the
@@ -398,8 +446,50 @@ export const MATERIALS = {
   unitOutline: grey(255),
 
   /** Unit code label on the isolated floor. */
-  unitLabelFill: grey(245),
+  unitLabelFill: grey(250),
   unitLabelOutline: grey(0),
+  /** The pill behind a unit code, and the brighter pill under the cursor. */
+  unitLabelBg: grey(24, 0.82),
+  unitLabelBgHover: Cesium.Color.fromBytes(48, 44, 36, 0.92),
+  /** The signed-in citizen's own flat: the pill takes the flat's warmth. */
+  unitLabelBgOwn: Cesium.Color.fromBytes(120, 78, 12, 0.92),
+
+  /**
+   * A LIFTED basement: the plate, its shell and the rim, in a cooler grey
+   * than a residential level so it still reads as below grade even while it
+   * is drawn above it.
+   */
+  basementPlate: Cesium.Color.fromBytes(148, 156, 164, 0.96),
+  basementShell: Cesium.Color.fromBytes(148, 156, 164, 0.10),
+  basementRim: Cesium.Color.fromBytes(200, 214, 228),
+  /** The ground-level ring and the depth tie-line beside a lifted basement. */
+  groundRing: Cesium.Color.fromBytes(255, 214, 138, 0.95),
+  depthLine: Cesium.Color.fromBytes(255, 214, 138, 0.8),
+  depthLabelBg: Cesium.Color.fromBytes(96, 64, 8, 0.92),
+
+  /** Painted drive aisle on a basement plate. */
+  aislePaint: grey(112, 0.9),
+  /** The painted line around a parking bay. */
+  bayOutline: grey(240, 0.9),
+
+  /**
+   * The full-height core bar, drawn when a core is selected: one solid from
+   * B2 to the roof in place of twenty-three per-level segments. The lift is
+   * steel, the stair is concrete -- two fabrics a reader can tell apart at
+   * a glance, and neither is a colour any titled volume uses.
+   */
+  coreBar: (kind: string, alpha = 0.92): Cesium.Color => (kind === 'stair'
+    ? Cesium.Color.fromBytes(176, 168, 152).withAlpha(alpha)
+    : Cesium.Color.fromBytes(132, 150, 172).withAlpha(alpha)),
+  coreBarOutline: grey(250),
+  coreLabelBg: Cesium.Color.fromBytes(30, 40, 52, 0.92),
+
+  /**
+   * The citizen's tower, seen from their floor: faint massing around the
+   * one plate they are shown, so "the twelfth floor of this building" has a
+   * building to be the twelfth floor of. Not pickable, not labelled.
+   */
+  citizenMassAlpha: 0.14,
 
   /** Surface parcel polygons, clamped to ground. */
   parcelFill: grey(190, 0.1),
