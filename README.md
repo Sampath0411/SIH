@@ -18,6 +18,10 @@ which were guessed.
 
 ![City view](docs/shots/1-city.png)
 
+<iframe src="https://drive.google.com/file/d/1hGSyG8ZU2ROfpFQoKXblmGps_eTcB1dl/preview" width="960" height="540" allow="autoplay"></iframe>
+
+_Demo of the 3D ULPIN viewer_
+
 ---
 
 ## Running it
