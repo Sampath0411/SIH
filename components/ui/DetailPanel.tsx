@@ -6,7 +6,7 @@ import { useDataStore, useDetailPending, useEditStore, useEnsureDetail, useViewS
 import { useUiStore } from '@/lib/ui-store';
 import { componentForRef } from '@/components/layers/InfraSiteLayer';
 import { LULC_SOURCE_SHORT, lulcClassLabel } from '@/lib/bhuvan';
-import { RISK_HEX } from '@/lib/cesium/materials';
+import { RISK_HEX, SECTION_22A_HEX } from '@/lib/cesium/materials';
 import type { RiskClass } from '@/lib/types';
 import type { ClashFinding } from '@/lib/topology';
 
@@ -36,6 +36,7 @@ import type {
   Provenance, RoadProps, SurveyParcelDetail, SurveyParcelProps, UtilityProps,
 } from '@/lib/types';
 import UlpinCard from './UlpinCard';
+import Section22ACard from './Section22ACard';
 import CountUp from './CountUp';
 import { DERIVED_PARCEL_NOTE, MOCK_BUILDING_NOTE, ProvenanceRow } from './Provenance';
 
@@ -578,6 +579,9 @@ export default function DetailPanel() {
   const gis2d = useViewStore((s) => s.gis2d);
   const activeSurveyParcelId = useViewStore((s) => s.activeSurveyParcelId);
   const surveyParcels = useDataStore((s) => s.surveyParcels);
+  const activeSection22aId = useViewStore((s) => s.activeSection22aId);
+  const selectSection22A = useViewStore((s) => s.selectSection22A);
+  const section22a = useDataStore((s) => s.section22a);
   const parcelDoc = useEnsureSurveyParcelDetail(
     gis2d ? activeSurveyParcelId : null,
   );
@@ -646,8 +650,33 @@ export default function DetailPanel() {
   const buildingConflicts = useBuildingConflicts(activeBuildingId);
   const neighbours = useBuildingNeighbours(activeBuildingId, 50);
 
+  // ---- Section 22A restricted land ---------------------------------------
+  // FIRST in the cascade, ahead of the survey parcel and the street.
+  //
+  // Safe at the head because every other selection setter clears
+  // `activeSection22aId` -- selectBuilding, selectUnit, selectRoad,
+  // selectUtility, setActiveSurveyParcel and clearAmbient all do, exactly as
+  // they clear `selectedRoadId`. So this branch can only be reached when a 22A
+  // entry is the most recent thing the user chose, and it can never mask a
+  // building they have just clicked.
+  if (activeSection22aId !== null) {
+    const feature = section22a?.features.find(
+      (f) => f.properties.id === activeSection22aId,
+    );
+    if (feature) {
+      return (
+        <Panel
+          title={`Survey no. ${feature.properties.survey_no}`}
+          kicker="Section 22A"
+        >
+          <Section22ACard props={feature.properties} />
+        </Panel>
+      );
+    }
+  }
+
   // ---- survey parcel -----------------------------------------------------
-  // First in the cascade, ahead of the street. In the 2D GIS view the Picker
+  // Second in the cascade, ahead of the street. In the 2D GIS view the Picker
   // resolves nothing else, so nothing else can be the most recent selection --
   // and the building the tree may have set must NOT take the panel over, or
   // clicking a row would replace the tree you clicked it in.
@@ -658,6 +687,13 @@ export default function DetailPanel() {
     const sp = feature?.properties as SurveyParcelProps | undefined;
     if (sp) {
       const surveyed = sp.provenance === 'survey_dept';
+      // Is this plot in the 22A register? Only asked once the register has been
+      // loaded, which happens only if the user switched the layer on -- so the
+      // absence of this row means "not checked", never "not restricted", and
+      // the card says nothing either way when the layer is off.
+      const listed = section22a?.features.find(
+        (f) => f.properties.parcel_id === sp.id,
+      );
       return (
         <Panel title={`Parcel ${sp.label}`} kicker="Parcel">
           {/* The provenance line comes FIRST here, not last as it does in
@@ -670,6 +706,28 @@ export default function DetailPanel() {
               ? `Survey parcel · ${sp.source ?? 'source not recorded'}`
               : 'Derived parcel (unofficial) · Voronoi clipped to OSM roads'}
           </p>
+
+          {/* The 22A flag, above the identifier: if this plot may not be
+              transacted, that outranks its number. A button rather than a
+              badge, because the register entry is a card of its own and the
+              reader who sees this will want it. */}
+          {listed ? (
+            <button
+              type="button"
+              onClick={() => selectSection22A(listed.properties.id)}
+              className="mt-2 flex w-full items-center gap-2 rounded border border-danger/60 px-2 py-1.5 text-left tint-hover"
+            >
+              <span
+                aria-hidden="true"
+                className="h-2.5 w-2.5 shrink-0 rounded-[2px] ring-1 ring-[rgb(var(--edge-strong))]"
+                style={{ background: SECTION_22A_HEX }}
+              />
+              <span className="text-[12px] font-semibold text-dangerInk">
+                Section 22A — Restricted
+              </span>
+              <span className="ml-auto text-[11px] text-[rgb(var(--muted))]">→</span>
+            </button>
+          ) : null}
 
           <div className="mt-2">
             {/* The parcel-level identifier, on the card that carries the
@@ -2040,7 +2098,7 @@ export default function DetailPanel() {
   );
 }
 
-function Panel({
+export function Panel({
   title,
   kicker,
   action,

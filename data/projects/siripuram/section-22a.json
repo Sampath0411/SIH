@@ -1,0 +1,196 @@
+{
+  "_note": "DEMONSTRATION REGISTER. This file is NOT the Registration & Stamps Department prohibited-property list under Section 22A of the Registration Act 1908. It was written for this application so the 22A layer can be shown end to end, and every plot in it is an ordinary derived parcel of the Siripuram AOI. No plot named here is asserted to be legally restricted. lib/section22a/source.ts is the seam the real register replaces this through; see its header.",
+  "source_label": "Demonstration 22A register (not a government list)",
+  "retrieved_on": null,
+  "records": [
+    {
+      "id": "22A-AP-VSP-0195",
+      "status": "22A_RESTRICTED",
+      "category": "GOVERNMENT_LAND",
+      "clause": "22A(1)(a)",
+      "survey_no": "104/2",
+      "ulpin_14": null,
+      "extent_sqm": 16188.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "District Collectorate, Visakhapatnam",
+      "reference": "RC/VSP/22A/2019/1184",
+      "listed_on": "2019-06-14",
+      "remarks": "Vested in the state; held for a public office.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 194 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-0142",
+      "status": "22A_RESTRICTED",
+      "category": "ENDOWMENT_LAND",
+      "clause": "22A(1)(b)",
+      "survey_no": "87/1A",
+      "ulpin_14": null,
+      "extent_sqm": 14320.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "Endowments Department, Government of Andhra Pradesh",
+      "reference": "END/VSP/22A/2020/0431",
+      "listed_on": "2020-02-27",
+      "remarks": "Attached to a charitable endowment; alienation barred.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 141 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-0216",
+      "status": "22A_RESTRICTED",
+      "category": "ASSIGNED_LAND",
+      "clause": "22A(1)(c)",
+      "survey_no": "112/3",
+      "ulpin_14": null,
+      "extent_sqm": 13670.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "Revenue Divisional Office, Visakhapatnam",
+      "reference": "RDO/VSP/ASD/2018/0776",
+      "listed_on": "2018-11-05",
+      "remarks": "Assigned to a beneficiary under the assignment rules.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 215 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-0018",
+      "status": "22A_RESTRICTED",
+      "category": "WAKF_LAND",
+      "clause": "22A(1)(b)",
+      "survey_no": "22/6",
+      "ulpin_14": null,
+      "extent_sqm": 9200.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "Andhra Pradesh State Wakf Board",
+      "reference": "WKF/AP/22A/2017/0219",
+      "listed_on": "2017-08-19",
+      "remarks": "Register extent differs from the mapped boundary; the register is the authority on extent.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 18 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-0309",
+      "status": "22A_RESTRICTED",
+      "category": "CEILING_SURPLUS",
+      "clause": "22A(1)(d)",
+      "survey_no": "141/2B",
+      "ulpin_14": null,
+      "extent_sqm": 12940.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "Urban Land Ceiling Cell, Visakhapatnam",
+      "reference": "ULC/VSP/22A/2016/0092",
+      "listed_on": "2016-03-30",
+      "remarks": "Declared surplus under the urban land ceiling.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 308 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-0157",
+      "status": "22A_RESTRICTED",
+      "category": "COURT_ORDER",
+      "clause": "22A(1)(e)",
+      "survey_no": "96/4",
+      "ulpin_14": null,
+      "extent_sqm": 11450.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "Principal District Court, Visakhapatnam",
+      "reference": "OS/2021/338",
+      "listed_on": "2021-09-08",
+      "remarks": "Registration stayed pending disposal of a civil suit.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 156 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-0218",
+      "status": "22A_RESTRICTED",
+      "category": "BHOODAN_LAND",
+      "clause": "22A(1)(c)",
+      "survey_no": "113/1",
+      "ulpin_14": null,
+      "extent_sqm": 11150.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "Andhra Pradesh Bhoodan Yagna Board",
+      "reference": "BHD/AP/22A/2015/0044",
+      "listed_on": "2015-12-11",
+      "remarks": "Donated under the Bhoodan movement.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 217 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-0174",
+      "status": "22A_RESTRICTED",
+      "category": "GOVERNMENT_LAND",
+      "clause": "22A(1)(a)",
+      "survey_no": "99/7",
+      "ulpin_14": null,
+      "extent_sqm": 9900.0,
+      "location": {
+        "village": "Siripuram",
+        "mandal": "Visakhapatnam (Urban)",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "District Collectorate, Visakhapatnam",
+      "reference": "RC/VSP/22A/2022/2071",
+      "listed_on": "2022-04-21",
+      "remarks": null,
+      "parcel_ref": { "kind": "survey_parcel", "id": 173 },
+      "geometry": null
+    },
+    {
+      "id": "22A-AP-VSP-8801",
+      "status": "22A_RESTRICTED",
+      "category": "ASSIGNED_LAND",
+      "clause": "22A(1)(c)",
+      "survey_no": "318/2",
+      "ulpin_14": null,
+      "extent_sqm": 6070.0,
+      "location": {
+        "village": "Pedagantyada",
+        "mandal": "Gajuwaka",
+        "district": "Visakhapatnam",
+        "state": "Andhra Pradesh"
+      },
+      "authority": "Revenue Divisional Office, Visakhapatnam",
+      "reference": "RDO/VSP/ASD/2019/1502",
+      "listed_on": "2019-10-02",
+      "remarks": "Outside this area of interest. Kept in the register so the count of prohibitions is not under-reported by the map; it is listed as not located rather than drawn at a guessed position.",
+      "parcel_ref": null,
+      "geometry": null
+    }
+  ]
+}

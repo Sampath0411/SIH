@@ -7,6 +7,7 @@ import BhuvanOverlayLayer from '../layers/BhuvanOverlayLayer';
 import HazardRiskLayer from '../layers/HazardRiskLayer';
 import ParcelsLayer from '../layers/ParcelsLayer';
 import SurveyParcelsLayer from '../layers/SurveyParcelsLayer';
+import Section22ALayer from '../layers/Section22ALayer';
 import BuildingsLayer from '../layers/BuildingsLayer';
 import BuildingsFarLayer from '../layers/BuildingsFarLayer';
 import RoadsLayer from '../layers/RoadsLayer';
@@ -56,6 +57,10 @@ import type { Project } from '@/lib/types';
  *            unless the user asked for them, and land use underneath parcel
  *            boundaries is what a GIS is FOR. Turning off a layer someone
  *            deliberately enabled would be this view overruling them.
+ *   kept     Section22ALayer, for exactly those reasons: draped, opt-in, and
+ *            restricted land over a cadastral sheet is the reading the 2D view
+ *            is best at. It draws over BOTH parcel layers, which is why it is
+ *            mounted after them.
  *
  * The floor stack and the units need no gate of their own: entering the mode
  * drops `mode` to 'city' and forces `slice.enabled` false, and both layers are
@@ -81,6 +86,9 @@ export default function Scene({ project }: { project: Project }) {
       {/* The 2D cadastral layer. Draws nothing, and fetches nothing, until
          the 2D GIS view is opened. */}
       <SurveyParcelsLayer />
+      {/* Section 22A restricted lands, over both parcel layers. Draws nothing,
+         and fetches nothing, until the 22A toggle is first pressed. */}
+      <Section22ALayer />
       <RoadsLayer />
       <BuildingsLayer />
       <BuildingsFarLayer />

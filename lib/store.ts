@@ -14,6 +14,7 @@ import type {
 import { fetchLulcAt, type LulcResult } from './bhuvan';
 import type { SiteIndexEntry, SiteSpec } from './infra/types';
 import type { ClashFinding } from './topology';
+import type { Section22AFC } from './section22a/types';
 import {
   UNDERGROUND_DEFAULTS, categoryOfAssetType, type UtilityCategory,
 } from './underground/categories';
@@ -175,6 +176,20 @@ export interface ViewState {
    */
   activeSurveyParcelId: number | null;
   /**
+   * The Section 22A register entry the panel is describing.
+   *
+   * A STRING, unlike every other selection here: a 22A record is identified by
+   * the register that published it, not by a row in our database, and the day
+   * the real register is connected its identifiers will be the department's.
+   * Typing it as a number would have forced a synthetic id and thrown the real
+   * one away.
+   *
+   * AMBIENT, like `selectedRoadId`: every other selection setter clears it, so
+   * the card can sit at the head of the panel's cascade without ever masking a
+   * building the user has just clicked.
+   */
+  activeSection22aId: string | null;
+  /**
    * What to put back when 2D GIS turns off.
    *
    * Entering the mode overwrites three fields the user chose -- the cadastral
@@ -308,6 +323,15 @@ export interface ViewState {
   setGis2d: (on: boolean) => void;
   /** Select a survey parcel. Called by Picker and by the panel's own close. */
   setActiveSurveyParcel: (id: number | null) => void;
+  /**
+   * Select a Section 22A register entry. Called by Picker and by the panel.
+   *
+   * Clears `activeSurveyParcelId`, and `setActiveSurveyParcel` clears this:
+   * the two cards describe the same piece of ground from two different
+   * registers, and showing one while the other is selected would leave the
+   * reader unable to tell which register they were reading.
+   */
+  selectSection22A: (id: string | null) => void;
   setViewMode: (m: '3D' | '2D' | 'Split') => void;
   setAutoSpin: (on: boolean) => void;
   setNavMode: (m: 'orbit' | 'pan' | 'zoom') => void;
@@ -357,6 +381,10 @@ const DEFAULT_LAYERS: Record<LayerKey, boolean> = {
   bhuvanLulc: false,
   bhuvanFlood: false,
   bhuvanCyclone: false,
+  // The 22A register is an analysis overlay, and its data is not fetched until
+  // it is switched on. Defaulting it to true would put a legal-looking warning
+  // on the map of every user who never asked for one.
+  section22a: false,
 };
 
 /**
@@ -417,6 +445,7 @@ function leaveGis2d(s: ViewState): Partial<ViewState> {
     gis2d: false,
     preGis2d: null,
     activeSurveyParcelId: null,
+    activeSection22aId: null,
     mode,
     ...(prev
       ? {
@@ -452,6 +481,7 @@ export const useViewStore = create<ViewState>((set) => ({
   undergroundLayers: { ...UNDERGROUND_DEFAULTS },
   gis2d: false,
   activeSurveyParcelId: null,
+  activeSection22aId: null,
   preGis2d: null,
   viewMode: '3D',
   autoSpin: false,
@@ -475,7 +505,7 @@ export const useViewStore = create<ViewState>((set) => ({
       id === null
         ? { mode: 'city', activeBuildingId: null, isolatedFloor: null,
             selectedUnitId: null, selectedUtilityId: null, selectedRoadId: null,
-            explodeT: 0,
+            activeSection22aId: null, explodeT: 0,
             // The cut plane is positioned across THIS building's footprint, so
             // it means nothing once there is no active building.
             slice: { ...s.slice, enabled: false } }
@@ -486,6 +516,7 @@ export const useViewStore = create<ViewState>((set) => ({
         // that the selection changed and lands on this building instead.
         : { mode: s.gis2d ? s.mode : 'building', activeBuildingId: id, isolatedFloor: null,
             selectedUnitId: null, selectedUtilityId: null, selectedRoadId: null,
+            activeSection22aId: null,
             slice: { ...s.slice, enabled: false, offset: 0 },
             // Auto-enable the parcels layer on selection so the user can see
             // the lot their selection is in without having to discover the
@@ -496,25 +527,28 @@ export const useViewStore = create<ViewState>((set) => ({
     set((s) =>
       level === null
         ? { mode: s.activeBuildingId ? 'building' : 'city', isolatedFloor: null,
-            selectedUnitId: null, selectedRoadId: null }
+            selectedUnitId: null, selectedRoadId: null, activeSection22aId: null }
         : { mode: 'floor', isolatedFloor: level, selectedUnitId: null,
-            selectedRoadId: null }),
+            selectedRoadId: null, activeSection22aId: null }),
 
   selectUnit: (id) =>
     set((s) =>
       id === null
-        ? { mode: s.isolatedFloor !== null ? 'floor' : 'building', selectedUnitId: null }
+        ? { mode: s.isolatedFloor !== null ? 'floor' : 'building', selectedUnitId: null,
+            activeSection22aId: null }
         : { mode: 'unit', selectedUnitId: id, selectedUtilityId: null,
-            selectedRoadId: null }),
+            selectedRoadId: null, activeSection22aId: null }),
 
   openUnit: (level, id) =>
     set({ mode: 'unit', isolatedFloor: level, selectedUnitId: id,
-          selectedUtilityId: null, selectedRoadId: null }),
+          selectedUtilityId: null, selectedRoadId: null, activeSection22aId: null }),
 
   selectUtility: (id) =>
-    set({ selectedUtilityId: id, selectedRoadId: null, selectedComponent: null }),
+    set({ selectedUtilityId: id, selectedRoadId: null, selectedComponent: null,
+          activeSection22aId: null }),
   selectRoad: (id) =>
-    set({ selectedRoadId: id, selectedUtilityId: null, selectedComponent: null }),
+    set({ selectedRoadId: id, selectedUtilityId: null, selectedComponent: null,
+          activeSection22aId: null }),
 
   /**
    * Leaving a site drops the component selection with it: a card describing
@@ -534,17 +568,30 @@ export const useViewStore = create<ViewState>((set) => ({
       // describes what the panel is showing without changing the mode.
       selectedUtilityId: null,
       selectedRoadId: null,
+      activeSection22aId: null,
     }),
 
   clearAmbient: () =>
-    set({ selectedRoadId: null, selectedUtilityId: null, selectedComponent: null }),
+    set({ selectedRoadId: null, selectedUtilityId: null, selectedComponent: null,
+          activeSection22aId: null }),
   setHovered: (id) => set({ hoveredBuildingId: id }),
   setHover: (buildingId, unitId, roadId, surveyParcelId) =>
     set({ hoveredBuildingId: buildingId, hoveredUnitId: unitId,
           hoveredRoadId: roadId, hoveredSurveyParcelId: surveyParcelId }),
 
   toggleLayer: (key) =>
-    set((s) => ({ layers: { ...s.layers, [key]: !s.layers[key] } })),
+    set((s) => {
+      const layers = { ...s.layers, [key]: !s.layers[key] };
+      // Switching the 22A layer OFF drops its selection with it. A card
+      // describing a parcel the scene is no longer marking is a card the user
+      // cannot clear by clicking anything -- the map has nothing left to click
+      // -- which is the same trap `selectSite` documents for a component whose
+      // site has been left. No other layer needs this because no other layer
+      // owns a selection.
+      return key === 'section22a' && !layers.section22a
+        ? { layers, activeSection22aId: null }
+        : { layers };
+    }),
 
   // Explode, slice and 2D GIS are mutually exclusive, and the exclusion is
   // enforced here rather than in the three controls: whichever one the user
@@ -597,7 +644,11 @@ export const useViewStore = create<ViewState>((set) => ({
       };
     }),
 
-  setActiveSurveyParcel: (id) => set({ activeSurveyParcelId: id }),
+  setActiveSurveyParcel: (id) =>
+    set({ activeSurveyParcelId: id, activeSection22aId: null }),
+
+  selectSection22A: (id) =>
+    set({ activeSection22aId: id, activeSurveyParcelId: null }),
 
   setTransparency: (t) => set({ transparency: Math.max(0, Math.min(100, t)) }),
   toggleTheme: () => set((s) => ({ theme: s.theme === 'dark' ? 'light' : 'dark' })),
@@ -782,6 +833,20 @@ export interface DataState {
    */
   surveyParcelDetail: { id: number; doc: SurveyParcelDetail } | null;
   pendingSurveyParcelDetail: number | null;
+  /**
+   * The Section 22A register. Null until the 22A layer is first switched on.
+   *
+   * Lazy for the same reason `surveyParcels` is: nobody who never presses the
+   * toggle should pay for it on the boot path, which is already the slowest
+   * thing this application does. `useEnsureSection22A()` fetches it once.
+   *
+   * A register with zero features is a REAL ANSWER -- a project the department
+   * has listed nothing in -- and is stored as such rather than left null, so
+   * the legend can say "no listed parcels" instead of shimmering forever.
+   */
+  section22a: Section22AFC | null;
+  /** True while that one fetch is in flight, so it is not issued twice. */
+  pendingSection22a: boolean;
   utilities: GeoFC<UtilityProps> | null;
   roads: GeoFC<RoadProps> | null;
   conflicts: ConflictRow[];
@@ -856,6 +921,8 @@ export interface DataState {
   setSurveyParcels: (fc: GeoFC<SurveyParcelProps> | null) => void;
   beginSurveyParcels: () => void;
   setSurveyParcelDetail: (id: number, doc: SurveyParcelDetail | null) => void;
+  setSection22A: (fc: Section22AFC | null) => void;
+  beginSection22A: () => void;
   beginSurveyParcelDetail: (id: number) => void;
   setUtilities: (fc: GeoFC<UtilityProps>) => void;
   setRoads: (fc: GeoFC<RoadProps>) => void;
@@ -909,6 +976,8 @@ export const useDataStore = create<DataState>((set) => ({
   pendingSurveyParcels: false,
   surveyParcelDetail: null,
   pendingSurveyParcelDetail: null,
+  section22a: null,
+  pendingSection22a: false,
   utilities: null,
   roads: null,
   conflicts: [],
@@ -942,6 +1011,8 @@ export const useDataStore = create<DataState>((set) => ({
         st.pendingSurveyParcelDetail === id ? null : st.pendingSurveyParcelDetail,
     })),
   beginSurveyParcelDetail: (id) => set({ pendingSurveyParcelDetail: id }),
+  setSection22A: (fc) => set({ section22a: fc, pendingSection22a: false }),
+  beginSection22A: () => set({ pendingSection22a: true }),
   setUtilities: (fc) => set({ utilities: fc }),
   setRoads: (fc) => set({ roads: fc }),
   setConflicts: (rows) => set({ conflicts: rows }),
@@ -1507,6 +1578,68 @@ export function useEnsureSurveyParcels(
   }, [enabled, slug]);
 
   return fc;
+}
+
+/**
+ * The Section 22A restricted-land register for the active project.
+ *
+ * Fetched ONCE, on the first press of the 22A toggle, and kept for the life of
+ * the page: the register is small, it does not change while a page is open, and
+ * a toggle the user is expected to flick back and forth must not re-issue a
+ * request every time it goes on. Same shape, and the same reasoning, as
+ * `useEnsureSurveyParcels` above.
+ *
+ * A FAILURE IS AN EMPTY REGISTER, not a retry loop and not an error banner --
+ * with one difference from the parcels hook that matters here: an empty
+ * register is stored as an empty FeatureCollection carrying the register block,
+ * so the legend can distinguish "this project has no listed parcels" from "the
+ * register could not be read". Saying "no restricted land" when the truth is
+ * "we could not ask" is the one wrong thing this layer can say.
+ */
+export function useEnsureSection22A(enabled: boolean): Section22AFC | null {
+  const fc = useDataStore((s) => s.section22a);
+  const slug = useViewStore((s) => s.projectSlug);
+
+  useEffect(() => {
+    if (!enabled || slug === null) return undefined;
+    const st = useDataStore.getState();
+    if (st.section22a !== null || st.pendingSection22a) return undefined;
+    st.beginSection22A();
+
+    const abort = new AbortController();
+    let settled = false;
+    (async () => {
+      try {
+        const res = await fetch(
+          `/api/p/${encodeURIComponent(slug)}/section-22a`,
+          { signal: abort.signal },
+        );
+        const body = res.ok ? ((await res.json()) as Section22AFC) : null;
+        settled = true;
+        useDataStore.getState().setSection22A(
+          body && Array.isArray(body.features) ? body : null,
+        );
+      } catch (err) {
+        if ((err as { name?: string })?.name === 'AbortError') return;
+        settled = true;
+        useDataStore.getState().setSection22A(null);
+      }
+    })();
+    return () => {
+      abort.abort();
+      // Clear the in-flight flag ONLY if this request never landed -- the trap
+      // useEnsureSurveyParcels documents: a stuck flag looks exactly like a
+      // project whose register is empty, and never resolves.
+      if (!settled) useDataStore.setState({ pendingSection22a: false });
+    };
+  }, [enabled, slug]);
+
+  return fc;
+}
+
+/** True while the register request is in flight and nothing has arrived yet. */
+export function useSection22APending(): boolean {
+  return useDataStore((s) => s.pendingSection22a && s.section22a === null);
 }
 
 /**

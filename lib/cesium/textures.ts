@@ -410,3 +410,64 @@ function drawEntryDoor(
   ctx.fillRect(x0 + doorW - Math.round(doorW * 0.16), y0 + Math.round(doorH * 0.42),
     Math.max(1, Math.round(PX_PER_M * 0.07)), Math.round(doorH * 0.14));
 }
+
+/**
+ * The Section 22A restricted-land hatch.
+ *
+ * ONE CANVAS FOR THE WHOLE LAYER, unlike plotHatch above, and the difference is
+ * deliberate. The plot hatch is aligned to each parcel's own principal axis
+ * because it is imitating a survey drawing of that plot. This one is a WARNING
+ * MARKING: it means the same thing on every parcel, so a fixed 45 degrees is
+ * correct, one canvas is enough, and every restricted polygon then shares one
+ * ImageMaterialProperty and collapses into a single batch.
+ *
+ * WHY A HATCH RATHER THAN A FLAT WASH. Three requirements meet here. The fill
+ * has to read as restricted at a glance; the map underneath has to stay
+ * legible; and two restricted parcels sharing an edge have to stay
+ * distinguishable. A flat translucent wash fails the third -- two adjacent
+ * washes are one shape -- and at an alpha strong enough to satisfy the first it
+ * fails the second. Diagonal stripes over a very light tint satisfy all three,
+ * and the boundary drawn on top of them is what actually separates neighbours.
+ *
+ * Cached at module scope: the canvas is 64 px, it never varies, and redrawing
+ * it per parcel would be a new GPU texture per parcel for an identical image.
+ */
+let restrictedHatchCanvas: HTMLCanvasElement | null = null;
+
+export function restrictedHatch(hex: string): HTMLCanvasElement {
+  if (restrictedHatchCanvas) return restrictedHatchCanvas;
+
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+
+  // Transparent base. The polygon carries its own faint tint underneath, so
+  // the stripes are the only thing this texture contributes -- which is what
+  // keeps the imagery, the parcel boundaries and the streets readable through
+  // a restricted plot instead of covering them.
+  ctx.clearRect(0, 0, size, size);
+
+  ctx.strokeStyle = hex;
+  ctx.globalAlpha = 0.32;
+  ctx.lineWidth = 3;
+  ctx.save();
+  ctx.translate(size / 2, size / 2);
+  ctx.rotate(Math.PI / 4);
+  // Pitch 11 px against a 64 px tile: wide enough that the ground shows
+  // between strokes at every zoom the layer is drawn at, tight enough that a
+  // small plot still gets three or four stripes and reads as hatched rather
+  // than as scratched.
+  for (let d = -size; d < size; d += 11) {
+    ctx.beginPath();
+    ctx.moveTo(d, -size);
+    ctx.lineTo(d, size);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  restrictedHatchCanvas = canvas;
+  return canvas;
+}

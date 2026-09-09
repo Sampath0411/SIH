@@ -9,6 +9,7 @@ utilities/route.ts ← GET utility volumes
 conflicts/route.ts ← GET ST_3DIntersects violations
 sites/route.ts ← GET the project's named infrastructure, as an index
 infra/[site]/route.ts ← GET one site's full spec: the lazy-load boundary
+section-22a/route.ts ← GET the Section 22A register, resolved onto parcel rings
 
 components/
 globe/
@@ -22,6 +23,7 @@ BuildingsLayer.tsx ← 700 footprints, extruded, styled by state
 FloorStackLayer.tsx ← active building only: per-floor slabs
 UnitsLayer.tsx ← isolated floor only: per-flat volumes
 ParcelsLayer.tsx ← surface parcel polygons, clamped to ground
+Section22ALayer.tsx ← the 22A restricted-land marking, over both parcel layers
 UtilitiesLayer.tsx ← one bucket grid PER CATEGORY, each built on demand
 InfraSiteLayer.tsx ← the active station / flyover, built on demand
 ConflictLayer.tsx ← pulsing red overlay on flagged segments
@@ -53,6 +55,9 @@ underground/layout.ts ← where an asset is DRAWN. Never touches the data
 infra/types.ts ← a site, its components, the fact/derived split
 infra/build.ts ← spec → rings and columns. Pure, Cesium-free
 cesium/explode.ts ← the lift animation
+section22a/types.ts ← the 22A record, the categories, and the exact disclaimers
+section22a/resolve.ts ← register entry + cadastre -> drawable feature. Pure
+section22a/source.ts ← THE SEAM the real government register arrives through
 store.ts ← zustand
 db.ts ← postgres client
 scripts/

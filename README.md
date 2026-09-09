@@ -196,6 +196,7 @@ This distinction is enforced in the data model, not just in the prose.
 | Flood / cyclone exposure grading | `scripts/hazard.py` over the CartoDEM surface + coastline | **Derived**, relative within the AOI, not an NRSC rating |
 | Parcel boundaries | Voronoi plots around clustered footprints | **Derived, not surveyed** |
 | Owners, tenure, encumbrances | generated placeholders | **Synthetic** |
+| Section 22A restricted lands | `data/projects/<slug>/section-22a.json` | **Demonstration register, not a government list** (`register.authoritative: false`) |
 | Utility alignments | offsets from road centrelines | **Representative, not as-built** |
 | Street geometry + class | OpenStreetMap (ODbL) | **Real** |
 | Street names, 10 of 131 | OSM `name` tag | **Real** (`name_source: osm_name`) |
@@ -539,6 +540,52 @@ works (their own floor is marked), and the layer, underground, stats, search,
 
 ---
 
+## Section 22A restricted lands
+
+Section 22A of the Registration Act 1908, as amended in Andhra Pradesh and
+Telangana, lets the state publish a list of properties a sub-registrar may not
+register a transaction on: government land, assigned land, endowment and wakf
+property, Bhoodan land, ceiling-surplus land, and land under a court order.
+
+The **22A** control in the dock draws that list on the map — a crimson hatch
+inside a heavy boundary, with a `22A` label once you zoom past 900 m — and
+clicking a marked plot opens the register entry: status, survey number, parcel
+ULPIN, category and clause, extent in acres, village / mandal / district, the
+issuing authority and its memo number.
+
+Three things about it are load-bearing.
+
+**It marks land; it does not draw land.** Every boundary is the cadastral
+parcel's own ring, borrowed by reference and never reshaped
+(`lib/section22a/resolve.ts`). A register that publishes its own boundary is the
+exception, and then that boundary wins over ours — a department is the authority
+on where its own land is. `npm run check:22a` compares the drawn rings against
+`/api/p/:slug/survey-parcels` vertex for vertex.
+
+**The register that ships here is a demonstration register.** It is not the
+Registration & Stamps prohibited-property list, no plot in it is asserted to be
+legally restricted, and every surface says so: the card, the legend, the API
+body and the `x-ulpin-22a-source` header. `register.authoritative` is the one
+field that governs the wording, and `lib/section22a.test.ts` fails if a shipped
+file ever claims otherwise.
+
+**Connecting the real list is one module.** `lib/section22a/source.ts` defines
+`Section22ASource`; the MVP implementation reads
+`data/projects/<slug>/section-22a.json`. Write one against a government feed,
+return it from `section22aSourceFor()`, and nothing in `components/` changes —
+the card's wording flips on its own, because it reads `authoritative`.
+
+The register is a file rather than a table on purpose. It is read on **both** the
+PostGIS and the snapshot path, so the two cannot disagree about it — the same
+reasoning `flatRegister()` in `lib/db.ts` already follows, and it is also the
+correct home on the merits: a 22A listing is a registration-department record
+about what may not be *done* with a plot, not a survey record about what the plot
+*is*.
+
+Entries the register holds but this project cannot place — a plot outside the
+AOI — are counted and reported in the legend as "listed, but not located in this
+area", never silently dropped and never drawn at a guessed position.
+
 ## API
 
 Every cadastre endpoint is scoped by project. The seven unscoped paths still
@@ -557,6 +604,7 @@ than by review.
 | `GET /api/p/:slug/conflicts` | `/api/conflicts` | flagged `ST_3DIntersects` violations |
 | `GET /api/p/:slug/parcels` | `/api/parcels` | surface parcels (beyond the brief; the parcels layer and inset need it) |
 | `GET /api/p/:slug/roads` | `/api/roads` | merged street centrelines with names, classes and lengths |
+| `GET /api/p/:slug/section-22a` | `/api/section-22a` | Section 22A restricted lands, as GeoJSON, plus a `register` block naming the source. `x-ulpin-22a-source` names it in a header too |
 | `GET /api/projects` | — | every project, with its stats |
 | `GET /api/projects/:slug` | — | one project |
 | `GET /api/p/:slug/ladm/spatial-unit/:suId` | — | the ISO 19152 document for one spatial unit |

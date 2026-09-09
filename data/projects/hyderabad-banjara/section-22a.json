@@ -1,0 +1,70 @@
+{
+  "_note": "DEMONSTRATION REGISTER. This file is NOT the Registration & Stamps Department prohibited-property list under Section 22A of the Registration Act 1908. It was written for this application so the 22A layer can be shown end to end, and every plot in it is an ordinary derived parcel of the Banjara Hills AOI. No plot named here is asserted to be legally restricted. lib/section22a/source.ts is the seam the real register replaces this through; see its header.",
+  "source_label": "Demonstration 22A register (not a government list)",
+  "retrieved_on": null,
+  "records": [
+    {
+      "id": "22A-TS-HYD-1201",
+      "status": "22A_RESTRICTED",
+      "category": "GOVERNMENT_LAND",
+      "clause": "22A(1)(a)",
+      "survey_no": "403/1",
+      "ulpin_14": null,
+      "extent_sqm": 11940.0,
+      "location": {
+        "village": "Shaikpet",
+        "mandal": "Khairatabad",
+        "district": "Hyderabad",
+        "state": "Telangana"
+      },
+      "authority": "District Collectorate, Hyderabad",
+      "reference": "RC/HYD/22A/2020/0612",
+      "listed_on": "2020-07-16",
+      "remarks": "Vested in the state.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 1525 },
+      "geometry": null
+    },
+    {
+      "id": "22A-TS-HYD-0858",
+      "status": "22A_RESTRICTED",
+      "category": "WAKF_LAND",
+      "clause": "22A(1)(b)",
+      "survey_no": "129/4",
+      "ulpin_14": null,
+      "extent_sqm": 8120.0,
+      "location": {
+        "village": "Shaikpet",
+        "mandal": "Khairatabad",
+        "district": "Hyderabad",
+        "state": "Telangana"
+      },
+      "authority": "Telangana State Wakf Board",
+      "reference": "WKF/TS/22A/2018/0338",
+      "listed_on": "2018-05-23",
+      "remarks": "Registered as wakf property.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 1182 },
+      "geometry": null
+    },
+    {
+      "id": "22A-TS-HYD-0264",
+      "status": "22A_RESTRICTED",
+      "category": "COURT_ORDER",
+      "clause": "22A(1)(e)",
+      "survey_no": "76/2A",
+      "ulpin_14": null,
+      "extent_sqm": 7660.0,
+      "location": {
+        "village": "Shaikpet",
+        "mandal": "Khairatabad",
+        "district": "Hyderabad",
+        "state": "Telangana"
+      },
+      "authority": "City Civil Court, Hyderabad",
+      "reference": "OS/2022/1194",
+      "listed_on": "2022-11-30",
+      "remarks": "Registration stayed pending disposal of a civil suit.",
+      "parcel_ref": { "kind": "survey_parcel", "id": 589 },
+      "geometry": null
+    }
+  ]
+}

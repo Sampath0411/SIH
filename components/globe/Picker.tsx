@@ -56,6 +56,50 @@ function pointInRing(ring: number[][], lon: number, lat: number): boolean {
 }
 
 /**
+ * Choose between several ground-draped hits by asking the ground.
+ *
+ * WHY DRAW ORDER CANNOT ANSWER THIS. A ground-clamped polygon is classified
+ * through a volume extruded over the terrain under it, and adjacent parcels'
+ * volumes overlap even where their 2D footprints do not -- so one ray
+ * legitimately returns several plots, and Cesium's ordering between coplanar
+ * ground primitives is arbitrary. Measured on the running app: a click aimed at
+ * the middle of parcel 0176 drilled to [surveyParcel:168, surveyParcel:175] and
+ * the first was the NEIGHBOUR. On a cadastral map, and even more on a map of
+ * legal restrictions, that is the worst kind of wrong: it looks like it worked.
+ *
+ * `scene.pickPosition` reads the depth buffer, which with depthTestAgainstTerrain
+ * on is the terrain surface the user is actually looking at, so the even-odd
+ * test below is run against the point they aimed at.
+ *
+ * Shared by the survey parcels and the 22A register: two copies of this would
+ * be two chances for the tie-breaks to disagree about the same click.
+ */
+function settleByRing<T extends EntityTag>(
+  scene: Cesium.Scene,
+  position: Cesium.Cartesian2,
+  hits: T[],
+  ringFor: (tag: T) => number[][] | undefined,
+): T | null {
+  if (hits.length <= 1) return hits[0] ?? null;
+  const world = scene.pickPosition(position);
+  if (world) {
+    const carto = Cesium.Cartographic.fromCartesian(world);
+    if (carto) {
+      const lon = Cesium.Math.toDegrees(carto.longitude);
+      const lat = Cesium.Math.toDegrees(carto.latitude);
+      for (const hit of hits) {
+        const ring = ringFor(hit);
+        if (ring && pointInRing(ring, lon, lat)) return hit;
+      }
+    }
+  }
+  // No ring contained it -- the cursor is on a corridor between plots, or the
+  // depth read failed. The topmost hit is then as good an answer as there is,
+  // and it is what the behaviour has always been.
+  return hits[0];
+}
+
+/**
  * The tag under the cursor, seeing past geometry that carries no tag, and
  * preferring a UNIT to whatever is in front of it.
  *
@@ -139,39 +183,41 @@ function pickTag(
    * worked.
    */
   ringOf?: (id: number) => number[][] | undefined,
+  /**
+   * Ring lookup for the Section 22A register, keyed by the register's own
+   * string id (`tag.ref`).
+   *
+   * A second map rather than a widened first one: 22A entries are identified by
+   * a string and survey parcels by a number, and one map over `id` would key
+   * 22A entries by the minted pick handle -- which is rebuilt every time the
+   * layer builds and means nothing outside it.
+   */
+  ringOfSection22a?: (ref: string) => number[][] | undefined,
 ): EntityTag | null {
   if (gis2d) {
+    // BOTH kinds are collected, and 22A wins. The two layers are draped on the
+    // same ground at the same time, so a click inside a marked plot is
+    // unambiguous about which register the user is pointing at: the one that
+    // put a marking there. Clicking any other plot still gives the parcel card.
+    const restricted: EntityTag[] = [];
     const hits: EntityTag[] = [];
-    const direct = tagOf(scene.pick(position));
-    if (direct?.kind === 'surveyParcel') hits.push(direct);
+    const collect = (tag: EntityTag | null) => {
+      if (!tag) return;
+      if (tag.kind === 'section22a') {
+        if (!restricted.some((h) => h.ref === tag.ref)) restricted.push(tag);
+      } else if (tag.kind === 'surveyParcel') {
+        if (!hits.some((h) => h.id === tag.id)) hits.push(tag);
+      }
+    };
+    collect(tagOf(scene.pick(position)));
     for (const candidate of scene.drillPick(position, DRILL_LIMIT)) {
-      const tag = tagOf(candidate);
-      if (tag?.kind === 'surveyParcel' && !hits.some((h) => h.id === tag.id)) {
-        hits.push(tag);
-      }
+      collect(tagOf(candidate));
     }
-    if (hits.length <= 1) return hits[0] ?? null;
-
-    // More than one plot under the ray: settle it on the GROUND, where the
-    // question actually has an answer. pickPosition reads the depth buffer,
-    // which with depthTestAgainstTerrain on is the terrain surface the user
-    // is looking at.
-    const world = scene.pickPosition(position);
-    if (world && ringOf) {
-      const carto = Cesium.Cartographic.fromCartesian(world);
-      if (carto) {
-        const lon = Cesium.Math.toDegrees(carto.longitude);
-        const lat = Cesium.Math.toDegrees(carto.latitude);
-        for (const hit of hits) {
-          const ring = ringOf(hit.id);
-          if (ring && pointInRing(ring, lon, lat)) return hit;
-        }
-      }
+    if (restricted.length > 0) {
+      return settleByRing(scene, position, restricted,
+        (t) => (t.ref ? ringOfSection22a?.(t.ref) : undefined));
     }
-    // No ring contained it -- the cursor is on a road corridor between plots,
-    // or the depth read failed. The topmost hit is then as good an answer as
-    // there is, and it is what the previous behaviour always gave.
-    return hits[0];
+    return settleByRing(scene, position, hits, (t) => ringOf?.(t.id));
   }
 
   const picked = scene.pick(position);
@@ -180,7 +226,8 @@ function pickTag(
 
   // The fast path: a tagged solid, and nothing better could be hiding behind
   // it. One pick render instead of seven.
-  if (!unitsPossible && first && first.kind !== 'road' && first.kind !== 'parcel') {
+  if (!unitsPossible && first && first.kind !== 'road' && first.kind !== 'parcel'
+    && first.kind !== 'section22a') {
     return first;
   }
 
@@ -192,10 +239,15 @@ function pickTag(
   // The existing four kinds keep pure depth order between themselves: clicking
   // THROUGH a neighbouring building to reach an isolated floor behind it
   // correctly returns the building today, and a rank table would break that.
-  const isGround = (k: EntityTag['kind']) => k === 'road' || k === 'parcel';
+  const isGround = (k: EntityTag['kind']) =>
+    k === 'road' || k === 'parcel' || k === 'section22a';
   let solid: EntityTag | null = first && !isGround(first.kind) ? first : null;
   let road: EntityTag | null = first?.kind === 'road' ? first : null;
   let parcel: EntityTag | null = first?.kind === 'parcel' ? first : null;
+  // All of them, not the first: two adjacent restricted plots overlap in the
+  // classification volume exactly as two survey parcels do, so this is settled
+  // on the ground below rather than by draw order.
+  const restricted: EntityTag[] = first?.kind === 'section22a' ? [first] : [];
 
   if (picked !== undefined) {
     for (const candidate of scene.drillPick(position, DRILL_LIMIT)) {
@@ -204,12 +256,28 @@ function pickTag(
       if (tag.kind === 'unit') return tag;      // topmost unit wins outright
       if (tag.kind === 'road') { road ??= tag; continue; }
       if (tag.kind === 'parcel') { parcel ??= tag; continue; }
+      if (tag.kind === 'section22a') {
+        if (!restricted.some((h) => h.ref === tag.ref)) restricted.push(tag);
+        continue;
+      }
       solid ??= tag;
     }
   }
 
   if (solid) return solid;
   if (road) return road;
+
+  // The 22A marking sits between an exact street hit and the derived surface
+  // parcel underneath it. Above the parcel because the user deliberately
+  // switched this layer on and a marked plot is the more specific answer;
+  // below an exact road hit because a click that lands on a carriageway is
+  // honestly a click on the street. It is ABOVE the widened road pass below,
+  // though: that pass is a fuzzy 13 px fallback, and a near-miss on a kerb must
+  // not steal a click aimed at the middle of a restricted plot.
+  if (restricted.length > 0) {
+    return settleByRing(scene, position, restricted,
+      (t) => (t.ref ? ringOfSection22a?.(t.ref) : undefined));
+  }
 
   // Nothing solid and nothing exactly on a line: try again with a WIDENED
   // pick, roads only. A 2-3 px stroke is an unusable click target and the
@@ -246,9 +314,11 @@ export default function Picker() {
   const clearAmbient = useViewStore((s) => s.clearAmbient);
   const setHover = useViewStore((s) => s.setHover);
   const setActiveSurveyParcel = useViewStore((s) => s.setActiveSurveyParcel);
+  const selectSection22A = useViewStore((s) => s.selectSection22A);
   const roadsVisible = useViewStore((s) => s.layers.roads);
   const gis2d = useViewStore((s) => s.gis2d);
   const surveyParcels = useDataStore((s) => s.surveyParcels);
+  const section22a = useDataStore((s) => s.section22a);
   const activeSiteId = useViewStore((s) => s.activeSiteId);
 
   // Read through a ref inside the handlers rather than closed over: making it
@@ -293,6 +363,25 @@ export default function Picker() {
     }
     ringsRef.current = m;
   }, [surveyParcels]);
+
+  /**
+   * register id -> outer ring, for the 22A pick disambiguation.
+   *
+   * Keyed by the register's own string, which is what `tag.ref` carries: the
+   * numeric `tag.id` is a pick handle minted during the layer's build and is
+   * not stable across one. Held through a ref for the same reason as the map
+   * above -- the register landing must not rebuild the ScreenSpaceEventHandler.
+   */
+  const rings22aRef = useRef<Map<string, number[][]>>(new Map());
+  useEffect(() => {
+    const m = new Map<string, number[][]>();
+    for (const f of section22a?.features ?? []) {
+      const ref = f.properties?.id;
+      const ring = (f.geometry as { coordinates?: number[][][] })?.coordinates?.[0];
+      if (typeof ref === 'string' && Array.isArray(ring)) m.set(ref, ring);
+    }
+    rings22aRef.current = m;
+  }, [section22a]);
 
   useEffect(() => {
     if (!viewer || !ready || viewer.isDestroyed()) return;
@@ -359,6 +448,7 @@ export default function Picker() {
         modeRef.current !== 'city',
         gis2dRef.current,
         (id) => ringsRef.current.get(id),
+        (ref) => rings22aRef.current.get(ref),
       );
       hoverCleared = tag === null;
       // Every hover target in one write: they are live at the same time and
@@ -380,6 +470,7 @@ export default function Picker() {
       const tag = pickTag(
         viewer.scene, click.position, roadsVisibleRef.current, true,
         true, gis2dRef.current, (id) => ringsRef.current.get(id),
+        (ref) => rings22aRef.current.get(ref),
       );
       if (!tag) {
         // In the 2D view a click on nothing DESELECTS, which is the opposite
@@ -423,6 +514,12 @@ export default function Picker() {
         case 'building':
           selectBuilding(tag.id);
           break;
+        case 'section22a':
+          // The register's own identifier, not the pick handle. No camera
+          // motion: a 22A entry is an attribute of a plot the user is already
+          // looking at, which is how every other attribute selection behaves.
+          if (tag.ref) selectSection22A(tag.ref);
+          break;
         case 'surveyParcel':
           // No camera move, following the street and utility precedent: the
           // user clicked a plot to read what stands on it, and the 2D view is
@@ -448,7 +545,7 @@ export default function Picker() {
     };
   }, [viewer, ready, selectBuilding, isolateFloor, selectUnit, openUnit,
       selectUtility, selectComponent, setHover, setActiveSurveyParcel,
-      clearAmbient, selectRoad]);
+      selectSection22A, clearAmbient, selectRoad]);
 
   return null;
 }

@@ -21,15 +21,37 @@ export interface EntityTag {
      * resolving a click to whichever id happened to be tagged, and selecting
      * the wrong plot in the wrong table is a silent error that looks correct.
      */
-    | 'surveyParcel';
+    | 'surveyParcel'
+    /**
+     * A parcel listed in the Section 22A restricted-land register.
+     *
+     * A SEPARATE KIND from both parcel kinds, for the reason above and one
+     * more: this entity is drawn on TOP of a survey parcel covering the same
+     * ground, and the two are pickable at the same time. One kind would make
+     * "which register did the user click" depend on Cesium's ordering between
+     * coplanar ground primitives, which is arbitrary.
+     */
+    | 'section22a';
+  /**
+   * The row id -- EXCEPT for an infra component and a 22A entry, which are
+   * identified by the string in `ref` and carry a minted number here purely as
+   * a pick handle. Every other kind is a database row, and a number is the
+   * honest type for one.
+   */
   id: number;
   /**
-   * The component's own identifier, for 'infra' only.
+   * The entity's own STRING identifier, for 'infra' and 'section22a'.
    *
    * An infrastructure component is identified by a string -- TTF-P-014 -- and
    * `id` is a number, so the layer mints a numeric pick handle and carries the
    * real identifier alongside it. Not a hash of the ref: a collision would
    * select the wrong pillar, and a counter cannot collide.
+   *
+   * A Section 22A entry takes the same treatment for the same reason, and one
+   * that will matter more later: a register entry is identified by whatever
+   * string its publisher assigned it, and when the government list replaces the
+   * demonstration one those strings become the department's. Minting a number
+   * and throwing the real identifier away would have to be undone then.
    */
   ref?: string;
   /**

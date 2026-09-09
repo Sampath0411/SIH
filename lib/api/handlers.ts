@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { callerTagFromCtx } from '@/lib/http/caller-tag';
 import {
   backend, getBuildingDetail, getBuildings, getLadmDoc, getParcels,
-  getRoads, getSurveyParcelDetail, getSurveyParcels, getTopology, getUtilities,
+  getRoads, getSection22A, getSurveyParcelDetail, getSurveyParcels, getTopology,
+  getUtilities,
 } from '@/lib/db';
 import { applyEdit, editsRev } from '@/lib/data/edits';
 import { coerceEdit, validateEdit, warningsFor } from '@/lib/data/building-schema';
@@ -19,6 +20,8 @@ import {
   filterLadmForCaller, narrowDetailForCaller, ownsSpatialUnit, refuseMutation,
 } from '@/lib/auth/access';
 import type { GeoFC } from '@/lib/types';
+import { section22aSourceFor } from '@/lib/section22a/source';
+import type { Section22AFC } from '@/lib/section22a/types';
 
 /**
  * The cadastre endpoints, written once.
@@ -259,6 +262,60 @@ function filterSurveyParcelsForCitizen(
       const ids = (f.properties as { building_ids?: number[] } | null)?.building_ids;
       return Array.isArray(ids) && ids.includes(ctx.buildingId);
     }),
+  };
+}
+
+/**
+ * GET .../section-22a -> the Section 22A restricted-land register, as GeoJSON.
+ *
+ * `x-ulpin-22a-source` names the register that answered -- the same integrity
+ * signal `x-ulpin-roads: derived` carries for the streets. A caller can tell a
+ * demonstration register from a government one from the response headers alone,
+ * without reading the body and without trusting the interface to have said so.
+ */
+export function section22aRoute(slug: string, req: Request) {
+  return serve(
+    slug, 'section-22a', getSection22A, req,
+    { 'x-ulpin-22a-source': section22aSourceFor(slug).id },
+    filterSection22AForCitizen,
+  );
+}
+
+/**
+ * Citizen view: the listing on their own plot, and no one else's.
+ *
+ * Matched through the parcel's `building_ids` exactly as
+ * `filterSurveyParcelsForCitizen` does -- the resolved feature carries
+ * `parcel_id`, so the parcel it names is looked up once and its buildings
+ * checked. Narrow rather than empty on purpose: "is my own land listed as
+ * prohibited" is a question a citizen is entitled to ask about their own
+ * property, and it is the whole value of the feature to them. Whether the
+ * neighbour's land is listed is not theirs to know.
+ *
+ * The register META is left intact, including `record_count`. A citizen sees
+ * "1 of 9 records" rather than a register that appears to hold one entry --
+ * withholding the shape of the list is the point, misrepresenting its size is
+ * not.
+ */
+async function filterSection22AForCitizen(
+  value: Section22AFC,
+  ctx: { kind: 'citizen'; buildingId: number; slug: string },
+): Promise<Section22AFC> {
+  const parcels = await getSurveyParcels(ctx.slug);
+  const mine = new Set<number>();
+  for (const f of parcels.features) {
+    const props = f.properties as { id?: number; building_ids?: number[] } | null;
+    if (Array.isArray(props?.building_ids)
+      && props.building_ids.includes(ctx.buildingId)
+      && typeof props.id === 'number') {
+      mine.add(props.id);
+    }
+  }
+  return {
+    ...value,
+    features: value.features.filter(
+      (f) => f.properties.parcel_id !== null && mine.has(f.properties.parcel_id),
+    ),
   };
 }
 

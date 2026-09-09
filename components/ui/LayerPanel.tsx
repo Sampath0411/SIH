@@ -60,6 +60,10 @@ const LAYERS: { key: LayerKey; label: string }[] = [
   { key: 'utilities', label: 'Underground utilities' },
   { key: 'terrain', label: 'DEM / terrain' },
   { key: 'basemap', label: 'Basemap' },
+  // Listed with the rest so the layer is discoverable where every other layer
+  // is, as well as from its own control in the dock. The register is not
+  // fetched until this is switched on.
+  { key: 'section22a', label: '22A restricted land' },
 ];
 
 function Slider({

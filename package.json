@@ -12,7 +12,7 @@
     "db:down": "docker compose down",
     "seed": "python scripts/seed.py",
     "seed:geo": "node -e \"require('child_process').spawnSync(require('path').join('.gdal-env', process.platform === 'win32' ? 'python.exe' : 'bin/python'), ['scripts/seed.py', ...process.argv.slice(1)], { stdio: 'inherit' })\" --",
-    "test": "node --test lib/ulpin.test.ts lib/geo.test.ts lib/bhuvan.test.ts lib/underground.test.ts lib/survey-parcel.test.ts lib/datum.test.ts lib/topology.test.ts lib/ladm.test.ts lib/basement-lift.test.ts lib/cores.test.ts",
+    "test": "node --test lib/ulpin.test.ts lib/geo.test.ts lib/bhuvan.test.ts lib/underground.test.ts lib/survey-parcel.test.ts lib/datum.test.ts lib/topology.test.ts lib/ladm.test.ts lib/basement-lift.test.ts lib/cores.test.ts lib/section22a.test.ts",
     "verify:ui": "node scripts/verify_ui.mjs",
     "check:basemap": "node scripts/check_basemap.mjs",
     "db:schema": "docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1 -f - < db/01_schema.sql && docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1 -f - < db/02_functions.sql",
@@ -34,7 +34,8 @@
     "demo:seed": "node scripts/seed_demo_building.mjs",
     "seed:dutt": "node --experimental-strip-types scripts/seed_dutt_retail.mjs",
     "check:volumetric": "node --experimental-strip-types scripts/check_volumetric.mjs",
-    "check:gis2d": "node --experimental-strip-types scripts/check_gis2d.mjs"
+    "check:gis2d": "node --experimental-strip-types scripts/check_gis2d.mjs",
+    "check:22a": "node --experimental-strip-types scripts/check_22a.mjs"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

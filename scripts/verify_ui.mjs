@@ -774,9 +774,13 @@ try {
       !chrome.nav.includes(label), chrome.nav.join(','));
   }
   // What must survive the trim.
-  check('the dock keeps Orbit, Reset view, 2D GIS and Slice',
+  // 22A is matched loosely because the control states its own state in its
+  // label -- "22A" off, "22A ✓" on -- and this walk may reach here with the
+  // layer in either state.
+  check('the dock keeps Orbit, Reset view, 22A, 2D GIS and Slice',
     ['Orbit', 'Reset view', '2D GIS', 'Slice']
-      .every((l) => chrome.nav.includes(l)), chrome.nav.join(','));
+      .every((l) => chrome.nav.includes(l))
+    && chrome.nav.some((l) => /^22A( ✓)?$/.test(l)), chrome.nav.join(','));
   check('the top bar keeps Stats', chrome.topbar.includes('Stats'),
     chrome.topbar.join(','));
   check('the action bar keeps Underground',

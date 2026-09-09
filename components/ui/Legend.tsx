@@ -3,8 +3,12 @@
 import { useMemo, useState } from 'react';
 import { useDataStore, useViewStore } from '@/lib/store';
 import {
-  MATERIALS, RISK_HEX, ROAD_COLOR, ROAD_STYLE, SURVEY_PARCEL_VIEW,
+  MATERIALS, RISK_HEX, ROAD_COLOR, ROAD_STYLE, SECTION_22A_HEX,
+  SURVEY_PARCEL_VIEW,
 } from '@/lib/cesium/materials';
+import {
+  SECTION_22A_DISCLAIMER, SECTION_22A_MOCK_NOTE,
+} from '@/lib/section22a/types';
 import {
   UNDERGROUND_LAYERS, categoryOfAssetType, type UtilityCategory,
 } from '@/lib/underground/categories';
@@ -65,6 +69,9 @@ export default function Legend() {
 
   const gis2d = useViewStore((s) => s.gis2d);
   const surveyParcels = useDataStore((s) => s.surveyParcels);
+  const show22a = useViewStore((s) => s.layers.section22a);
+  const section22a = useDataStore((s) => s.section22a);
+  const register = section22a?.register ?? null;
   // Read from the data, not assumed. Every row this repository ships is
   // derived; the day scripts/import_survey_parcels.py loads a real register,
   // this key has to stop calling it derived without anyone remembering to
@@ -172,6 +179,59 @@ export default function Legend() {
                 + 'footprints, clipped to road corridors. The number in each '
                 + 'plot is a per-project ordinal, NOT a survey number, a TS '
                 + 'number or a Bhu-Aadhaar.'}
+          </p>
+        </div>
+      ) : null}
+
+      {/* Section 22A, keyed only while the layer is on.
+          The swatch is inline-styled -- the data-swatch exemption
+          scripts/shoot.mjs's chrome audit relies on -- so the key carries the
+          same crimson the map does. It is drawn as a hatched block over a
+          heavy rule because that is exactly what is on the ground: a marking
+          inside a strong boundary.
+
+          THE COUNTS ARE TWO NUMBERS, NOT ONE. A register entry this project
+          cannot place is still a prohibition, and a legend that printed only
+          what it drew would quietly under-report the list. */}
+      {show22a ? (
+        <div className="mt-2 border-t border-[rgb(var(--edge))]/50 pt-2">
+          <div className="panel-title">22A restricted land</div>
+          <div className="mt-1.5 flex items-center gap-2">
+            <span
+              aria-hidden="true"
+              className="h-3 w-4 shrink-0 rounded-[2px]"
+              style={{
+                // The hatch and the boundary, drawn the way the map draws them:
+                // stripes inside a heavy rule. An inset shadow rather than a
+                // border, so the 4 px swatch keeps its full width for the fill.
+                background: `repeating-linear-gradient(45deg, ${SECTION_22A_HEX}88 0 2px, transparent 2px 5px)`,
+                boxShadow: `inset 0 0 0 1.5px ${SECTION_22A_HEX}`,
+              }}
+            />
+            <span className="flex-1 text-[11px] text-[rgb(var(--ink))]">
+              Restricted / prohibited parcel
+            </span>
+            <span className="font-mono text-[10px] text-[rgb(var(--muted))]">
+              {section22a?.features.length ?? 0}
+            </span>
+          </div>
+          {register && register.unlocated_count > 0 ? (
+            <div className="mt-1 flex items-center gap-2">
+              <span aria-hidden="true" className="h-3 w-4 shrink-0" />
+              <span className="flex-1 text-[11px] text-[rgb(var(--muted))]">
+                Listed, but not located in this area
+              </span>
+              <span className="font-mono text-[10px] text-[rgb(var(--muted))]">
+                {register.unlocated_count}
+              </span>
+            </div>
+          ) : null}
+          <p className="mt-1.5 text-[9px] leading-snug text-[rgb(var(--muted))]">
+            {register && !register.authoritative
+              ? `${SECTION_22A_MOCK_NOTE} ${SECTION_22A_DISCLAIMER}`
+              : `Source: ${register?.source_label ?? 'unknown'}`
+                + `${register?.retrieved_on ? `, read ${register.retrieved_on}` : ''}. `
+                + SECTION_22A_DISCLAIMER}
           </p>
         </div>
       ) : null}

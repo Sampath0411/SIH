@@ -105,6 +105,66 @@ export const SURVEY_PARCEL_VIEW = {
   LABEL_SCALE_FAR: 0.6,
 } as const;
 
+/**
+ * The Section 22A restricted-land hue, and everything the layer draws with.
+ *
+ * A MEANING COLOUR, in the sense of the rule at the top of this file: it is a
+ * legend entry, and it is the one thing on the map that says a plot may not be
+ * transacted. Chosen against the two families it must never be confused with:
+ *
+ *   the derived hazard ramp runs straw -> amber -> orange -> deep red
+ *     (RISK_HEX below), so anything in that arc would read as a flood grade;
+ *   CONFLICT_COLOR and --danger are the reds that mean "a pipe is inside a
+ *     basement" and "this control will break something".
+ *
+ * #C2185B is a crimson clear of both arcs -- it is neither on the yellow-to-red
+ * ramp nor the alarm red -- which is what lets a restricted parcel sit on a
+ * flood-graded ward without either being mistaken for the other.
+ *
+ * The chrome stays monochrome: this hue reaches the panel and the legend ONLY
+ * through an inline style on a swatch, which is the documented exemption in
+ * scripts/shoot.mjs's colour audit and the same route RISK_HEX takes.
+ */
+export const SECTION_22A_HEX = '#C2185B';
+
+/**
+ * Every dimension the 22A layer draws with, in one block, for the same reason
+ * SURVEY_PARCEL_VIEW and FLOOR_VIEW exist: no layer invents its own.
+ */
+export const SECTION_22A_VIEW = {
+  /**
+   * Boundary width, screen pixels.
+   *
+   * WIDER THAN THE CADASTRAL BOUNDARY (2 px), because the brief is explicit
+   * that the boundary must be more prominent than the fill -- and because the
+   * fill is a 32%-alpha hatch, which is deliberately too quiet to carry the
+   * meaning on its own.
+   */
+  OUTLINE_PX: 3,
+  /** Boundary width for the selected plot. */
+  OUTLINE_ACTIVE_PX: 5,
+  /**
+   * Camera distance beyond which the "22A" labels stop being drawn, metres.
+   *
+   * BELOW the opening pose, not above it, which is the opposite of
+   * SURVEY_PARCEL_VIEW.LABEL_MAX_DISTANCE_M and is the point. A cadastral sheet
+   * has to open with its parcel numbers on it. This layer opens as a set of
+   * marked plots, and the label is the confirmation a reader gets when they
+   * zoom in on one -- the brief's "optional small 22A label when zoomed in
+   * sufficiently". The project frames at roughly 1,200 m, so 900 m means the
+   * labels arrive on the first deliberate zoom and never crowd the city view.
+   */
+  LABEL_MAX_DISTANCE_M: 900,
+  /** Label type size, px. */
+  LABEL_FONT: '700 11px ui-monospace, SFMono-Regular, Menlo, monospace',
+  /** Halo width around the label ink, px. */
+  LABEL_OUTLINE_PX: 3,
+  /** Labels shrink with distance rather than all vanishing at once. */
+  LABEL_SCALE_NEAR_M: 300,
+  LABEL_SCALE_FAR_M: 900,
+  LABEL_SCALE_FAR: 0.65,
+} as const;
+
 export const FLOOR_VIEW = {
   /** Thickness of the isolated level's base plate, metres. */
   PLATE_THICKNESS_M: 0.3,
@@ -528,6 +588,32 @@ export const MATERIALS = {
   /** Label ink and its halo. White halo so the number survives a dark roof. */
   surveyParcelLabelFill: grey(25, 1),
   surveyParcelLabelOutline: grey(255, 0.9),
+
+  /**
+   * Section 22A restricted lands.
+   *
+   * THE ONLY HUED PARCEL TREATMENT in this file, and the exception is earned:
+   * every other boundary here is monochrome because a plot outline carries no
+   * meaning a colour could encode, and this one carries the only meaning that
+   * a colour must -- that the land may not be transacted.
+   *
+   * The fill is a 10% wash UNDER the hatch texture (lib/cesium/textures.ts),
+   * not the hatch itself: the wash gives the polygon a tint at any zoom, the
+   * hatch gives it a marking, and between them the imagery, the streets and the
+   * cadastral boundaries underneath stay readable. The boundary is the
+   * prominent element, which is why it sits at 0.95 against the fill's 0.10.
+   *
+   * Drawn over BOTH basemaps -- the dark 3D scene and CARTO Voyager's off-white
+   * 2D ground -- so unlike the survey parcel tones these cannot invert for one
+   * of them. #C2185B holds its identity on both, which is the other reason it
+   * was chosen over a lighter warning tone.
+   */
+  section22aFill: rgba(194, 24, 91, 0.1),
+  section22aOutline: rgba(194, 24, 91, 0.95),
+  section22aActive: rgba(194, 24, 91, 1),
+  /** Label ink and its halo. White halo, so "22A" survives a dark roof. */
+  section22aLabelFill: rgba(194, 24, 91, 1),
+  section22aLabelOutline: grey(255, 0.92),
 
   /** Architectural model on the active building. */
   buildingModelWall: grey(OFF_WHITE),

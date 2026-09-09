@@ -46,7 +46,16 @@ export type LayerKey =
   | 'parcels' | 'buildings' | 'roads' | 'floors' | 'utilities' | 'terrain' | 'basemap'
   // ISRO Bhuvan WMS context overlays. Offered only when the project's
   // bhuvan_layers block names the layer; off by default.
-  | 'bhuvanLulc' | 'bhuvanFlood' | 'bhuvanCyclone';
+  | 'bhuvanLulc' | 'bhuvanFlood' | 'bhuvanCyclone'
+  /**
+   * Section 22A restricted lands: the registration department's list of
+   * parcels prohibited from sale, gift, mortgage or registration.
+   *
+   * A LAYER rather than a mode, unlike `gis2d`: it draws over whatever else is
+   * on, it does not take the scene over, and it survives in a shared link. Off
+   * by default, and its data is not fetched until it is first switched on.
+   */
+  | 'section22a';
 
 /** Where a building's ground_elev came from. See scripts/dem.py. */
 export type GroundSource = 'dsm_dem' | 'placeholder';

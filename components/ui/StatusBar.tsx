@@ -30,6 +30,8 @@ export default function StatusBar({
   const buildingStyle = useViewStore((s) => s.buildingStyle);
   const activeBuildingId = useViewStore((s) => s.activeBuildingId);
   const gis2d = useViewStore((s) => s.gis2d);
+  const show22a = useViewStore((s) => s.layers.section22a);
+  const section22aCount = useDataStore((s) => s.section22a?.features.length ?? 0);
   /**
    * Whether THESE parcels are surveyed or derived, read from the data rather
    * than assumed.
@@ -160,6 +162,19 @@ export default function StatusBar({
               ? 'survey parcels' : 'derived parcels'}`
             : underground ? 'underground' : mode}
         </span>
+        {/* The 22A layer names itself and its size while it is on. Counted off
+            the loaded register rather than written down, for the same reason
+            the parcel provenance above is read from the data: the day a real
+            register is connected this line has to be right without anyone
+            remembering to come back and edit it. */}
+        {show22a ? (
+          <>
+            <Sep />
+            <span className="uppercase tracking-wide text-[rgb(var(--ink))]">
+              {`22A · ${section22aCount} restricted`}
+            </span>
+          </>
+        ) : null}
       </span>
     </div>
   );

@@ -25,6 +25,12 @@ import { useViewStore } from '@/lib/store';
  * and Explode -- which the store enforces, so those two controls only have to
  * RENDER the exclusion, not implement it.
  *
+ * 22A sits left of 2D GIS and is the odd one out here: it is a LAYER, not a
+ * mode, so it is exclusive with nothing and it stays on across a trip into the
+ * 2D view. It has a control in the dock as well as a checkbox in the LayerPanel
+ * for the same reason Slice does -- one flag, two ways to reach it -- and the
+ * one-mount rule the chrome obeys is about panels, not about state.
+ *
  * THE KEYBOARD SHORTCUT LIVES HERE, and it is the first one in this
  * application: components/ui/shell/Drawer.tsx's Escape handler is the only
  * other window-level key listener, and it is scoped to a drawer that is open.
@@ -45,6 +51,8 @@ export default function NavDock({
   const activeBuildingId = useViewStore((s) => s.activeBuildingId);
   const gis2d = useViewStore((s) => s.gis2d);
   const setGis2d = useViewStore((s) => s.setGis2d);
+  const section22a = useViewStore((s) => s.layers.section22a);
+  const toggleLayer = useViewStore((s) => s.toggleLayer);
   const citizen = useViewStore((s) => s.session.role === 'citizen');
   // Disabled while the 2D view is on, as well as with nothing selected. Both
   // are states in which a section cut through the active building means
@@ -115,6 +123,31 @@ export default function NavDock({
       {citizen ? null : (
       <>
       <span className="mx-1 h-4 w-px bg-[rgb(var(--edge))]" />
+
+      {/*
+        Section 22A. A LAYER toggle, not a mode: it writes `layers.section22a`
+        through the same toggleLayer every checkbox in the LayerPanel uses, and
+        it draws over whatever the user already has on rather than taking the
+        scene over the way 2D GIS does. It sits here rather than only in the
+        panel because it is a map analysis the brief asks to be one press away.
+
+        No keyboard shortcut. `G` is the only bare-letter binding in this
+        application and the note at the top of this file explains why a
+        registry with one entry is a place for a control and its shortcut to
+        drift apart; a second one is not worth inventing a convention for.
+      */}
+      <button
+        type="button"
+        aria-pressed={section22a}
+        onClick={() => toggleLayer('section22a')}
+        title="Section 22A — land listed as prohibited from sale, gift, mortgage or registration"
+        className={[
+          'rounded px-2.5 py-1 text-[11px] transition-colors',
+          section22a ? 'is-active' : 'text-[rgb(var(--ink))] tint-hover',
+        ].join(' ')}
+      >
+        {section22a ? '22A ✓' : '22A'}
+      </button>
 
       <button
         type="button"

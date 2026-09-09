@@ -24,6 +24,11 @@ import type {
 } from './topology';
 import { categoryOfAssetType, UNDERGROUND_BY_KEY } from './underground/categories';
 import { placeSite } from './infra/build';
+import { resolveSection22A } from './section22a/resolve';
+import { section22aSourceFor, type Section22AListing } from './section22a/source';
+import {
+  SECTION_22A_DISCLAIMER, SECTION_22A_MOCK_NOTE, type Section22AFC,
+} from './section22a/types';
 
 /**
  * Data access with two backends, scoped by project.
@@ -908,6 +913,63 @@ export async function getSurveyParcelDetail(
   return {
     parcel: { ...props, geometry: feature.geometry as unknown as Ring },
     buildings,
+  };
+}
+
+/**
+ * The Section 22A prohibited-property register, as drawable features.
+ *
+ * TWO SOURCES, ONE ANSWER. The register itself comes from
+ * `section22aSourceFor(slug)` -- today a committed file, tomorrow a government
+ * feed, and nothing downstream of here knows which. The GEOMETRY comes from
+ * `getSurveyParcels`, which is the existing reader with its own PostGIS and
+ * snapshot paths, so this endpoint works on both backends without a second
+ * code path and without a line of SQL.
+ *
+ * WHY THE REGISTER IS NOT A TABLE. Same reason `flatRegister()` above is not:
+ * it is read on BOTH backends, so PostGIS and the snapshot cannot disagree
+ * about it. A `section_22a` table would be empty on every existing volume,
+ * `viaDb()` would report success with zero rows, the snapshot fallback would
+ * never fire, and the layer would draw nothing with docker up while drawing the
+ * register with docker down. It is also the correct home on the merits: a 22A
+ * listing is a Registration & Stamps record about what may not be DONE with a
+ * plot, not a survey record about what the plot IS.
+ *
+ * NEVER THROWS. A missing file, an unreadable file and a source that throws all
+ * become an empty register with `record_count: 0`, which is the same contract
+ * `getRoads` and `getSurveyParcels` keep: a project with no register is a
+ * normal state, and reporting it as a 500 would tell a user their project is
+ * broken when it is merely not listed.
+ */
+export async function getSection22A(slug: string): Promise<Section22AFC> {
+  const source = section22aSourceFor(slug);
+  let listing: Section22AListing = { records: [], retrieved_on: null };
+  try {
+    listing = await source.list(slug);
+  } catch (err) {
+    console.error(`[ulpin-22a] register source ${source.id} failed for ${slug}:`, err);
+  }
+
+  const parcels = await getSurveyParcels(slug);
+  const { features, unlocated } = resolveSection22A(listing.records, parcels);
+
+  return {
+    type: 'FeatureCollection',
+    features,
+    register: {
+      source_id: source.id,
+      source_label: source.label,
+      authoritative: source.authoritative,
+      retrieved_on: listing.retrieved_on,
+      record_count: listing.records.length,
+      unlocated_count: unlocated.length,
+    },
+    // Carried on the wire, not only in the interface: a caller reading this
+    // endpoint directly gets the caveat with the data, which is the same reason
+    // getRoads stamps its own derivation onto the collection.
+    _disclaimer: source.authoritative
+      ? SECTION_22A_DISCLAIMER
+      : `${SECTION_22A_MOCK_NOTE} ${SECTION_22A_DISCLAIMER}`,
   };
 }
 
