@@ -830,7 +830,4 @@ Ground elevation for Siripuram is derived from **CartoDEM version 3 (1
 arc-second), © NRSC/ISRO**, downloaded from Bhuvan; the raw tile is not
 redistributed here, only the clipped 49 × 43 cell extract. The land use / land
 cover (SISDP 1:10,000) and the flood and cyclone hazard-zone overlays are served
-live from **NRSC/ISRO Bhuvan** WMS and remain © NRSC/ISRO; the viewer credits
-them in Cesium's attribution container whenever one is on screen. Bhuvan's
-capabilities document declares no fees and no access constraints; heavy or
-commercial use should be cleared with NRSC.
+live from **NRSC/ISRO Bhuvan** WMS and remain © NRSC/ISRO; the viewer credits them in Cesium's attribution container whenever one is on screen. Bhuvan's capabilities document declares no fees and no access constraints; heavy or commercial use should be cleared with NRSC.
