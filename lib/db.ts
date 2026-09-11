@@ -63,7 +63,40 @@ import {
  * falling back to the snapshot while the header still claimed `postgis`.
  */
 
-const CONNECT_TIMEOUT_MS = 1500;
+const LOCAL_CONNECT_TIMEOUT_MS = 1500;
+/**
+ * A managed Postgres (Neon) is not localhost, and it does two things the
+ * docker-compose container never did: it sits ~70 ms away across the public
+ * internet, and it SUSPENDS its compute after a few minutes of no traffic.
+ * The first connection after a quiet spell therefore pays a cold start --
+ * comfortably more than the 1.5 s that was generous for a container on the
+ * loopback.
+ *
+ * Getting this wrong is not a slow page, it is a WRONG page: a connect
+ * timeout is indistinguishable from "docker-compose is not running", so
+ * `usingDb` latches false and the request is served from the snapshot with
+ * the header quietly claiming `static` instead of `postgis`. The demo keeps
+ * working and stops being live, which is the one failure mode that must not
+ * happen in front of a jury.
+ *
+ * So the budget follows the target rather than being one number for both:
+ * loopback keeps the snappy fallback that makes local development pleasant
+ * when the container is down, and anything remote gets room for a cold
+ * start. DATABASE_CONNECT_TIMEOUT_MS overrides it either way.
+ */
+const REMOTE_CONNECT_TIMEOUT_MS = 12_000;
+
+/** postgres://user:pass@HOST:port/db -- the host is all we need. */
+function isLoopbackTarget(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+  } catch {
+    // An unparseable URL is not something to guess about; assume remote,
+    // which only ever errs towards waiting longer.
+    return false;
+  }
+}
 /**
  * After a failed probe, the next request that needs a DB decision waits
  * this long before re-probing. A short cooldown stops a tight loop of
@@ -82,11 +115,23 @@ let dbProbeFailedAt = 0;
 
 function getPool(): Pool {
   if (!pool) {
+    const connectionString =
+      process.env.DATABASE_URL ?? 'postgresql://ulpin:ulpin@localhost:55432/ulpin';
+    const override = Number(process.env.DATABASE_CONNECT_TIMEOUT_MS);
+    const connectionTimeoutMillis = Number.isFinite(override) && override > 0
+      ? override
+      : isLoopbackTarget(connectionString)
+        ? LOCAL_CONNECT_TIMEOUT_MS
+        : REMOTE_CONNECT_TIMEOUT_MS;
     pool = new Pool({
-      connectionString:
-        process.env.DATABASE_URL ?? 'postgresql://ulpin:ulpin@localhost:55432/ulpin',
-      max: 10,
-      connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
+      connectionString,
+      // One serverless instance is one process with its own pool, and there
+      // are as many instances as Vercel decides to run. Ten connections each
+      // exhausts a managed Postgres' connection limit quickly, which is what
+      // the -pooler endpoint in DATABASE_URL exists to absorb; keeping the
+      // per-process pool small means we lean on it rather than fight it.
+      max: isLoopbackTarget(connectionString) ? 10 : 4,
+      connectionTimeoutMillis,
       idleTimeoutMillis: 10000,
     });
     // A pool-level error (idle-client RST, container restart) does NOT
