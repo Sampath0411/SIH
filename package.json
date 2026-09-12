@@ -2,11 +2,16 @@
   "name": "ulpin-3d",
   "version": "1.0.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
+    "desktop": "electron electron/main.js",
+    "desktop:pack": "electron-builder --win nsis --publish never",
+    "desktop:dir": "electron-builder --win --dir --publish never",
+    "build:desktop": "node scripts/make_icons.mjs && node scripts/build_desktop.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "postinstall": "node scripts/copy-cesium.mjs",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
@@ -51,6 +56,7 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
@@ -58,6 +64,11 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "autoprefixer": "^10.4.20",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^15.5.25",
+    "globals": "^15.15.0",
     "postcss": "^8.4.49",
     "puppeteer-core": "^25.9.0",
     "tailwindcss": "^3.4.17",
@@ -65,5 +76,49 @@
   },
   "overrides": {
     "@zip.js/zip.js": "2.7.62"
+  },
+  "build": {
+    "appId": "com.ramcharankhv.aeroview",
+    "productName": "AERO-VIEW",
+    "directories": {
+      "output": "dist-desktop",
+      "buildResources": "build-res"
+    },
+    "files": [
+      "electron/**"
+    ],
+    "extraResources": [
+      {
+        "from": "standalone",
+        "to": "app"
+      },
+      {
+        "from": "data",
+        "to": "app/data"
+      },
+      {
+        "from": "public",
+        "to": "app/public"
+      },
+      {
+        "from": ".next/static",
+        "to": "app/.next/static"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": null
   }
 }

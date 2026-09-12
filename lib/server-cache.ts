@@ -235,7 +235,7 @@ export function warmProject(slug: string): Promise<number> {
         if (id === undefined) continue;
         // Through cachedDetail, not around it: warming must populate the same
         // key a request would read, or it warms nothing.
-        // eslint-disable-next-line no-await-in-loop
+         
         await cachedDetail(slug, id);
         n += 1;
       }

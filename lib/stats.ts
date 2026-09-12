@@ -61,7 +61,7 @@ export function heightHistogram(
 }
 
 /** Building counts per use_type, in a fixed order so the bars never reorder. */
-export function useTypeCounts(
+export function typeCounts(
   features: GeoFeature<BuildingProps>[],
 ): Array<{ key: UseType; count: number }> {
   const tally = new Map<string, number>();

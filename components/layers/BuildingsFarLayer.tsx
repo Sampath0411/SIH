@@ -116,6 +116,14 @@ export default function BuildingsFarLayer() {
    */
   const aliveRef = useRef(true);
 
+  // Latest toggle values, read by the build effect's onDone. The build effect
+  // deliberately does not list them as dependencies (a toggle must not rebuild
+  // the primitive; the mirror effect below owns visibility) but onDone still
+  // needs the CURRENT values, not the ones captured at build start -- otherwise
+  // a toggle landing mid-build is overwritten the moment the primitive lands.
+  const showStateRef = useRef({ showBuildings, gis2d, buildingStyle });
+  showStateRef.current = { showBuildings, gis2d, buildingStyle };
+
   // ---- build the primitive once ------------------------------------------
   useEffect(() => {
     if (!viewer || !ready || !buildingsLoaded || viewer.isDestroyed()) return;
@@ -212,7 +220,8 @@ export default function BuildingsFarLayer() {
           releaseGeometryInstances: true,
           shadows: Cesium.ShadowMode.DISABLED,
         });
-        primitive.show = showBuildings && !gis2d && buildingStyle !== 'photoreal';
+        const s = showStateRef.current;
+        primitive.show = s.showBuildings && !s.gis2d && s.buildingStyle !== 'photoreal';
         viewer.scene.primitives.add(primitive);
         primitiveRef.current = primitive;
         mark('buildings-far-built');

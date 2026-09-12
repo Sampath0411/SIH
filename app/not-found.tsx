@@ -6,6 +6,9 @@
  * "unavailable" panel that page renders itself, which is for a project that
  * really exists and cannot currently be served.
  */
+
+import Link from 'next/link';
+
 export default function NotFound() {
   return (
     <main className="grid h-dvh w-screen place-items-center bg-bg px-4">
@@ -17,12 +20,12 @@ export default function NotFound() {
           for it under <code className="font-mono text-ink">data/api/</code> and
           PostGIS has no rows for it either.
         </p>
-        <a
+        <Link
           href="/"
           className="tint-hover mt-4 inline-block rounded border border-edge px-2 py-1 text-[11px] text-ink"
         >
           ← All projects
-        </a>
+        </Link>
       </div>
     </main>
   );

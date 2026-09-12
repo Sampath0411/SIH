@@ -1,30 +1,38 @@
-# 3D ULPIN — Vertical Property Mapper
+<div align="center">
 
-A three-dimensional cadastral viewer, one **project** per area of interest. The
-demo project is **Siripuram, Visakhapatnam** (bbox
-`83.3130,17.7180,83.3245,17.7280`); a second, **Banjara Hills Ward, Hyderabad**
-(`78.4300,17.4100,78.4450,17.4250`), was generated from the same pipeline to
-prove nothing about the first is hardcoded. See [Projects](#projects).
+# 🏙️ AERO-VIEW — 3D ULPIN Vertical Property Mapper
 
-Land administration is normally drawn flat, but rights are not flat. This app
-models the whole vertical stack — **parcel → building → floor → unit** — plus the
-**underground utility corridors** that can legally encroach on a basement, and it
-labels every entity with **where its data came from**.
+**A three-dimensional cadastral viewer: parcel → building → floor → unit, plus the underground utility corridors that can legally encroach on a basement — every entity labelled with where its data came from.**
 
-That last part is the point of the system: in this area only **8% of buildings
-carry a height in OpenStreetMap**, so almost every storey count on screen is an
-inference. A viewer must never be left unsure which numbers were measured and
-which were guessed.
+<img src="docs/shots/1-city.png" alt="Siripuram, Visakhapatnam — the demo project" width="840">
 
-![City view](docs/shots/1-city.png)
+[![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=000000&color=000)](https://nextjs.org)
+[![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev)
+[![Cesium](https://img.shields.io/badge/Cesium-1.126-0B60BC?logo=cesium)](https://cesium.com)
+[![PostGIS](https://img.shields.io/badge/PostGIS-3.4-316395)](https://postgis.net)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=3178C6)](https://www.typescriptlang.org)
+[![Tests](https://img.shields.io/badge/tests-136%20passing-2ea043)](https://github.com/ramcharankhv-byte/AERO-VIEW/actions)
+[![Data license](https://img.shields.io/badge/data-ODbL-F7B731)](https://opendatacommons.org/licenses/odbl/)
 
-<iframe src="https://drive.google.com/file/d/1hGSyG8ZU2ROfpFQoKXblmGps_eTcB1dl/preview" width="960" height="540" allow="autoplay"></iframe>
+</div>
 
-_Demo of the 3D ULPIN viewer_
+## Demo
+
+Watch the viewer walk the vertical stack — orbit the city, fly into a building, explode the floor stack, isolate a level, and dive underground to the utility corridors:
+
+<img src="docs/demo.gif" alt="AERO-VIEW demo — city orbit, building fly-in, exploded floors, isolated level, underground corridors" width="800">
+
+_The demo project is **Siripuram, Visakhapatnam** (bbox `83.3130,17.7180,83.3245,17.7280`); a second, **Banjara Hills Ward, Hyderabad** (`78.4300,17.4100,78.4450,17.4250`), was generated from the same pipeline to prove nothing about the first is hardcoded. See [Projects](#projects)._
 
 ---
 
-## Running it
+## What this is
+
+Land administration is normally drawn flat, but rights are not flat. This app models the whole vertical stack — **parcel → building → floor → unit** — plus the **underground utility corridors** that can legally encroach on a basement, and it labels every entity with **where its data came from**.
+
+That last part is the point of the system: in this area only **8% of buildings carry a height in OpenStreetMap**, so almost every storey count on screen is an inference. A viewer must never be left unsure which numbers were measured and which were guessed.
+
+## Quick start
 
 ```bash
 npm install                # also copies Cesium assets into public/cesium
@@ -49,6 +57,38 @@ npm run seed:geo           # = .gdal-env/python scripts/seed.py, same arguments 
 `/` is the project gallery; each project's viewer is at `/p/<slug>`, e.g.
 [`/p/siripuram`](http://localhost:3000/p/siripuram).
 
+> **The database is optional at runtime.** The route handlers try PostGIS first
+> and fall back to the committed snapshots in `data/api/<slug>/`, so
+> `npm run dev` alone renders the full app — gallery included. Every response
+> carries an `x-ulpin-backend: postgis|snapshot` header saying which path served
+> it, answered **per project**: with the database up and a project that exists
+> only as a snapshot, a global probe would have claimed `postgis` for a response
+> the snapshot served.
+
+## Table of contents
+
+- [Running it](#running-it)
+  - [Basemap imagery](#basemap-imagery)
+  - [Context overlays (ISRO Bhuvan)](#context-overlays-isro-bhuvan)
+  - [Cesium ion token (optional)](#cesium-ion-token-optional)
+- [What is real, and what is not](#what-is-real-and-what-is-not)
+  - [Streets](#streets)
+  - [The synthetic building register](#the-synthetic-building-register)
+  - [Manual edit](#manual-edit)
+  - [The identifier](#the-identifier)
+- [ISO 19152 (LADM)](#iso-19152-ladm)
+- [Architecture](#architecture)
+- [Section 22A restricted lands](#section-22a-restricted-lands)
+- [API](#api)
+- [Projects](#projects)
+- [The deliberate conflict](#the-deliberate-conflict)
+- [Verifying](#verifying)
+- [Data licence](#data-licence)
+
+---
+
+## Running it
+
 If your PostGIS volume predates multi-project support, migrate it rather than
 re-seeding — the migration is additive and idempotent and never drops a table
 or deletes a row:
@@ -72,14 +112,6 @@ docker exec -i ulpin-postgis psql -U ulpin -d ulpin   -c "SELECT * FROM ladm_bac
 
 Migration 002 adds the ground-elevation provenance columns and the Bhuvan
 overlay block; the pipeline writes them, so it is required before re-seeding.
-
-**The database is optional at runtime.** The route handlers try PostGIS first
-and fall back to the committed snapshots in `data/api/<slug>/`, so
-`npm run dev` alone renders the full app — gallery included. Every response
-carries an `x-ulpin-backend: postgis|snapshot` header saying which path served
-it, answered **per project**: with the database up and a project that exists
-only as a snapshot, a global probe would have claimed `postgis` for a response
-the snapshot served.
 
 ### Basemap imagery
 
@@ -722,6 +754,7 @@ Underground mode pulses them red and names the planted one first.
 
 ```bash
 npm test            # ULPIN round-trip + SQL-parity assertions, datum, topology
+npm run lint        # ESLint (next/core-web-vitals), zero warnings
 npm run verify:ui   # drives a real Chrome through all five view modes
 npm run check:volumetric  # interior volumes, retail plan, clash engine, LADM, certificates
 npm run check:roads # street picking, tolerance, deselect, building precedence
@@ -798,7 +831,7 @@ npm run check:volumetric
 - **ISO 19152** — 41,574 spatial units · 3,233 BA units · 3,286 rights ·
   117 parties, backfilled across both projects from what the cadastre already
   held
-- `tsc --noEmit` clean, 108/108 unit tests, 46/46 UI checks, 26/26 street checks,
+- `tsc --noEmit` clean, 136/136 unit tests, 46/46 UI checks, 26/26 street checks,
   31/31 edit checks, responsive checks green at 1680/1280/834/390 px on both
   the viewer and the gallery
 - The chrome audit reports **0 off-palette elements** at every viewport, and the
@@ -830,4 +863,4 @@ Ground elevation for Siripuram is derived from **CartoDEM version 3 (1
 arc-second), © NRSC/ISRO**, downloaded from Bhuvan; the raw tile is not
 redistributed here, only the clipped 49 × 43 cell extract. The land use / land
 cover (SISDP 1:10,000) and the flood and cyclone hazard-zone overlays are served
-live from **NRSC/ISRO Bhuvan** WMS and remain © NRSC/ISRO; the viewer credits them in Cesium's attribution container whenever one is on screen. Bhuvan's capabilities document declares no fees and no access constraints; heavy or commercial use should be cleared with NRSC.
+live from **NRSC/ISRO Bhuvan** WMS and remain © NRSC/ISRO; the viewer credits them in Cesium's attribution container whenever one is on screen. Bhuvan's capabilities document declares no fees and no access constraints; heavy or commercial use should be cleared with NRSC.

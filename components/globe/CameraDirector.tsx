@@ -91,10 +91,13 @@ export default function CameraDirector() {
   const { viewer, ground, ready, project } = useViewer();
   // The project's own centre, not a module constant. Pressing Reset on a
   // Hyderabad project used to fly the camera to Visakhapatnam.
-  const aoiCentre = project
-    ? { lon: (project.bbox[0] + project.bbox[2]) / 2,
-        lat: (project.bbox[1] + project.bbox[3]) / 2 }
-    : { lon: 0, lat: 0 };
+  const aoiCentre = useMemo(
+    () => project
+      ? { lon: (project.bbox[0] + project.bbox[2]) / 2,
+          lat: (project.bbox[1] + project.bbox[3]) / 2 }
+      : { lon: 0, lat: 0 },
+    [project],
+  );
   const cityHeight = project ? frameHeightFor(project.bbox) : 1200;
   const mode = useViewStore((s) => s.mode);
   const activeBuildingId = useViewStore((s) => s.activeBuildingId);
@@ -376,7 +379,7 @@ export default function CameraDirector() {
   }, [
     viewer, ready, ground, mode, activeBuildingId, isolatedFloor,
     selectedUnitId, underground, gis2d, buildings, detail, site, siteSpanM,
-    aoiCentre.lon, aoiCentre.lat, cityHeight,
+    aoiCentre, cityHeight,
   ]);
 
   // Auto-spin is camera motion, so it is owned here too rather than by the

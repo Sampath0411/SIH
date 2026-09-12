@@ -83,7 +83,7 @@ export default function RoadsLayer() {
     // is unavailable the lines would silently draw at height 0 -- i.e. buried
     // under the terrain -- so say so once rather than rendering a lie.
     if (!Cesium.Entity.supportsPolylinesOnTerrain(viewer.scene)) {
-      // eslint-disable-next-line no-console
+       
       console.warn(
         '[roads] this GPU cannot classify polylines onto terrain; '
         + 'street centrelines will not be drawn.',

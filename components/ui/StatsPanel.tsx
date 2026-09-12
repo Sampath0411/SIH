@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { useDataStore, useViewStore } from '@/lib/store';
 import {
-  conflictsByAuthority, heightHistogram, provenanceMix, useTypeCounts,
+  conflictsByAuthority, heightHistogram, provenanceMix, typeCounts,
 } from '@/lib/stats';
 
 /**
@@ -95,7 +95,7 @@ export default function StatsPanel() {
 
   const features = useMemo(() => buildings?.features ?? [], [buildings]);
   const heights = useMemo(() => heightHistogram(features, 8), [features]);
-  const uses = useMemo(() => useTypeCounts(features), [features]);
+  const uses = useMemo(() => typeCounts(features), [features]);
   const authorities = useMemo(() => conflictsByAuthority(conflicts), [conflicts]);
   const mix = useMemo(() => provenanceMix(features), [features]);
 

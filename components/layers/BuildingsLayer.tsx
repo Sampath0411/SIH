@@ -172,6 +172,10 @@ export default function BuildingsLayer() {
     const buildings = useDataStore.getState().buildings;
     if (!buildings) return;
 
+    // Captured up front so the cleanup reads the map this effect actually
+    // populated, not whatever the ref holds by the time cleanup runs.
+    const entities = entitiesRef.current;
+
     const grid = createBucketGrid(
       viewer,
       'buildings',
@@ -421,9 +425,9 @@ export default function BuildingsLayer() {
       // sees false on its next read and short-circuits. The dispose calls
       // below are the matching teardown for the slices that already
       // completed.
+      entities.clear();
       aliveRef.current = false;
       cancelBuild();
-      entitiesRef.current.clear();
       grid.dispose();
       gridRef.current = null;
     };

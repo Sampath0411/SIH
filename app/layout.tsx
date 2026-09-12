@@ -81,7 +81,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://services.arcgisonline.com" crossOrigin="" />
 
         {/* Served from public/cesium (copied on postinstall) rather than
-            imported, so the bundler never has to process Cesium's CSS. */}
+            imported, so the bundler never has to process Cesium's CSS.
+            eslint-disable no-css-tags: this is a public/ asset, not a
+            bundler-built stylesheet the rule exists to catch. */}
+        {/* eslint-disable-next-line @next/next/no-css-tags */}
         <link rel="stylesheet" href="/cesium/Widgets/widgets.css" />
       </head>
       <body>{children}</body>

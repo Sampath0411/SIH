@@ -248,7 +248,7 @@ export async function cacheFlushPrefix(prefix: string): Promise<number> {
     do {
       // SCAN, not KEYS: KEYS blocks the server on a large keyspace; SCAN
       // walks incrementally and is safe to run against a populated cache.
-      // eslint-disable-next-line no-constant-condition
+       
       const [next, batch] = await c.scan(cursor, 'MATCH', `${prefix}*`, 'COUNT', 200);
       cursor = next;
       if (batch.length) {

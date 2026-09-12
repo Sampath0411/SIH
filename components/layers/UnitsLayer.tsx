@@ -227,6 +227,9 @@ export default function UnitsLayer() {
     if (!bprops) return;
 
     const terrainH = ground.get(activeBuildingId);
+    // Captured up front so the cleanup reads the map this effect actually
+    // populated, not whatever the ref holds by the time cleanup runs.
+    const bars = barsRef.current;
     const ds = new Cesium.CustomDataSource('units');
     dsRef.current = ds;
     viewer.dataSources.add(ds);
@@ -610,7 +613,7 @@ export default function UnitsLayer() {
     return () => {
       if (!viewer.isDestroyed()) viewer.dataSources.remove(ds, true);
       dsRef.current = null;
-      barsRef.current.clear();
+      bars.clear();
       settled.dispose();
       if (settledRef.current === settled) settledRef.current = null;
     };
@@ -626,6 +629,8 @@ export default function UnitsLayer() {
   // and is re-armed from the store-sync effect above whenever the
   // computed `fadeTarget` actually moves.
   useEffect(() => {
+    // The arm handle this effect installs; cleanup removes exactly this one.
+    const state = stateRef.current;
     let raf = 0;
     let parked = true;
     const arm = () => {
@@ -634,7 +639,7 @@ export default function UnitsLayer() {
         raf = requestAnimationFrame(step);
       }
     };
-    stateRef.current.armFade = arm;
+    state.armFade = arm;
     const step = () => {
       const s = stateRef.current;
       const delta = s.fadeTarget - s.fade;
@@ -655,7 +660,7 @@ export default function UnitsLayer() {
     return () => {
       if (raf) cancelAnimationFrame(raf);
       parked = true;
-      stateRef.current.armFade = null;
+      state.armFade = null;
     };
   }, [viewer]);
 
