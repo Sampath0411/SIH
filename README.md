@@ -1,6 +1,21 @@
-# AERO-VIEW — 3D ULPIN Vertical Property Mapper
+<div align="center">
+
+# AERO-VIEW
+
+### 3D ULPIN Vertical Property Mapper
 
 **Next.js 15 · React 19 · Cesium 1.126 · PostGIS 16 + SFCGAL · Electron 44**
+
+![Next.js 15](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![React 19](https://img.shields.io/badge/React-19-20232A?logo=react&logoColor=61DAFB)
+![Cesium 1.126](https://img.shields.io/badge/Cesium-1.126-6CADDF?logo=cesium&logoColor=white)
+![PostGIS 16 + SFCGAL](https://img.shields.io/badge/PostGIS-16%20%2B%20SFCGAL-4479A1?logo=postgis&logoColor=white)
+![Electron 44](https://img.shields.io/badge/Electron-44-2B2E3A?logo=electron&logoColor=9FEAF9)
+![Web + Windows desktop](https://img.shields.io/badge/Platform-web%20%2B%20Windows%20desktop-0078D4?logo=windows&logoColor=white)
+
+<img src="docs/shots/1-city.png" width="920" alt="AERO-VIEW — Siripuram, Visakhapatnam, rendered in Cesium"/>
+
+</div>
 
 A three-dimensional cadastral viewer that models the whole vertical stack of
 property — **parcel → building → floor → unit** — plus the **underground
@@ -13,20 +28,44 @@ derived, synthetic or placeholder. In an area where fewer than one in ten
 buildings has a storey count in OpenStreetMap, a viewer must never leave you
 guessing which numbers were measured and which were inferred.
 
-![City view](docs/shots/1-city.png)
-
 ---
 
 ## Demo video
 
-<iframe width="960" height="540" src="https://www.youtube.com/embed/F7hnRkYftOg"
-  title="AERO-VIEW demo" frameborder="0"
-  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-  referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+https://www.youtube.com/watch?v=F7hnRkYftOg
 
-On GitHub, iframes are stripped — click through to watch:
+<details>
+<summary>Player not showing? Click the thumbnail to watch on YouTube.</summary>
 
-[![Watch the demo on YouTube](https://img.youtube.com/vi/F7hnRkYftOg/hqdefault.jpg)](https://youtu.be/F7hnRkYftOg)
+[![AERO-VIEW demo on YouTube](https://img.youtube.com/vi/F7hnRkYftOg/hqdefault.jpg)](https://www.youtube.com/watch?v=F7hnRkYftOg)
+
+</details>
+
+---
+
+## Highlights
+
+- **Full vertical cadastre** — drill city → building → floor → unit, each
+  level picked through the one above it, basements lifted into the light.
+- **Real 3D conflict detection** — underground utilities intersect-tested
+  against basement solids (`ST_3DIntersects`), violations pulsing red.
+- **Honest by construction** — a provenance badge on every entity, and a
+  data table that says exactly what is real, estimated, derived or synthetic.
+- **ISO 19152 (LADM)** — parties, rights and the plot beneath your flat,
+  answered as one legal record.
+- **Web and Windows desktop** — installer + portable exe, the cadastre works
+  fully offline.
+
+---
+
+## Screenshots
+
+| | | |
+|---|---|---|
+| <img src="docs/shots/3-explode.png" width="330" alt="Explode view"/> | <img src="docs/shots/6-underground.png" width="330" alt="Underground utilities"/> | <img src="docs/shots/12-floor-units.png" width="330" alt="Floor with units"/> |
+| **Explode** — the stack, separated | **Underground** — conflicts pulse red | **Floor** — every unit co-pickable |
+| <img src="docs/shots/7-provenance-legend.png" width="330" alt="Provenance legend"/> | <img src="docs/shots/vizag-station.png" width="330" alt="Vizag railway station"/> | <img src="docs/shots/13-floor-sliced.png" width="330" alt="Sliced floor"/> |
+| **Provenance** — badge + legend | **Infrastructure** — station & air-rights | **Slice** — drag-plane section cut |
 
 ---
 
@@ -41,6 +80,7 @@ On GitHub, iframes are stripped — click through to watch:
 - [API](#api)
 - [Architecture](#architecture)
 - [Verification](#verification)
+- [Known limitations](#known-limitations)
 - [Data sources and licences](#data-sources-and-licences)
 - [Repository map](#repository-map)
 
@@ -249,15 +289,16 @@ Demo logins (committed demo data):
 
 ## Running the web app
 
-The committed snapshots in `data/api/<slug>/` render the full app with no
-database at all:
-
 ```bash
 npm install     # also copies Cesium assets into public/cesium
 npm run dev     # http://localhost:3000 — gallery at /, viewer at /p/siripuram
 ```
 
-### With PostGIS (optional, but the intended backend)
+The committed snapshots in `data/api/<slug>/` render the full app with no
+database at all.
+
+<details>
+<summary><strong>With PostGIS</strong> (optional, but the intended backend)</summary>
 
 ```bash
 docker compose up -d     # postgis/postgis:16-3.4 + SFCGAL, port 55432
@@ -276,7 +317,10 @@ docker exec -i ulpin-postgis psql -U ulpin -d ulpin -v ON_ERROR_STOP=1 -f - < db
 docker exec -i ulpin-postgis psql -U ulpin -d ulpin -c "SELECT * FROM ladm_backfill(1);"
 ```
 
-### Environment
+</details>
+
+<details>
+<summary><strong>Environment variables</strong></summary>
 
 Copy `.env.example` to `.env.local`. The important variables:
 
@@ -297,7 +341,10 @@ nothing knows the slug; `503` means the project is real but has no snapshot
 and the database is not answering — a stopped docker container is not reported
 as “project does not exist”.
 
-### Generating a new project
+</details>
+
+<details>
+<summary><strong>Generating a new project</strong></summary>
 
 ```bash
 npm run seed -- --slug=hyderabad-banjara --name="Banjara Hills Ward" \
@@ -319,13 +366,18 @@ micromamba create -y -p ./.gdal-env -c conda-forge python=3.12 gdal rasterio pyp
 npm run seed:geo   # same arguments as seed
 ```
 
+</details>
+
 ---
 
 ## API
 
-All cadastre endpoints are scoped by project. The seven unscoped paths
-(`/api/buildings`, …) remain as **thin aliases onto the demo project** sharing
-the scoped handler body — byte-identical by construction.
+<details>
+<summary>All cadastre endpoints are scoped by project — expand for the full table</summary>
+
+The seven unscoped paths (`/api/buildings`, …) remain as **thin aliases onto
+the demo project** sharing the scoped handler body — byte-identical by
+construction.
 
 | Endpoint | Returns |
 |---|---|
@@ -355,9 +407,14 @@ unit      AP-VSP-3D26-0001-001-01-02  B02                    z 63.51..66.21
 The `z` values are metres above mean sea level (EGM96), from the CartoDEM
 sample at the building's centroid.
 
+</details>
+
 ---
 
 ## Architecture
+
+<details>
+<summary>Component map, invariants and design decisions — expand</summary>
 
 ```
 app/                 / gallery, /p/[slug] viewer, /login — api/p/[slug]/* routes
@@ -402,9 +459,14 @@ Notable decisions:
 
 Full component map and rationale: [`architecture.md`](architecture.md).
 
+</details>
+
 ---
 
 ## Verification
+
+<details>
+<summary>Test and UI-harness commands — expand</summary>
 
 ```bash
 npm test              # 11 unit-test files: ULPIN/SQL parity, datum, topology,
@@ -429,7 +491,11 @@ npm run verify:ui && npm run check:rwd
 only carries with `NEXT_PUBLIC_ULPIN_PROBE=1`; `npm run dev` has it
 unconditionally.
 
-### Known limitations
+</details>
+
+---
+
+## Known limitations
 
 - **Measurements, Share and Split view** are rendered visibly disabled rather
   than hidden — absence is explicit.
@@ -474,3 +540,12 @@ credits render bottom-left and must not be hidden.
 | [`docs/DEMO.md`](docs/DEMO.md) | 10-minute demo script with deep links |
 | [`HANDOFF.md`](HANDOFF.md) | Working state, known issues, next steps |
 | `.env.example` | Every environment variable, annotated |
+
+---
+
+<div align="center">
+
+<sub>Built on real OpenStreetMap footprints, CartoDEM elevations and NRSC/ISRO Bhuvan overlays ·<br/>
+An unofficial demo — not an official government product</sub>
+
+</div>
