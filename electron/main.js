@@ -85,7 +85,7 @@ function spawnNextDev() {
   const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
   const child = spawn(npmCmd, ['run', 'dev'], {
     cwd: PROJECT_ROOT,
-    env: { ...process.env, PORT: String(PORT) },
+    env: { ...process.env, ...desktopEnv, PORT: String(PORT) },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -240,9 +240,11 @@ app.whenReady().then(async () => {
 
   log(`isDev=${isDev} PROJECT_ROOT=${PROJECT_ROOT}`);
 
-  if (!isDev) {
-    desktopEnv = ensureDesktopEnv();
-  }
+  // In both dev and packaged mode, persist a per-install SESSION_SECRET so the
+  // Next.js server (whether `next dev` or the standalone server.js) signs and
+  // verifies cookies with the same key. Without this, dev mode's per-process
+  // random secret makes login loop back to /login on every restart.
+  desktopEnv = ensureDesktopEnv();
 
   if (isDev) {
     serverProcess = spawnNextDev();
