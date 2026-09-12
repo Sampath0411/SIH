@@ -15,6 +15,11 @@
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Standalone output is only needed by the Electron desktop shell (the packaged
+  // app ships .next/standalone/server.js and runs it with Node directly). The
+  // desktop build sets DESKTOP_BUILD=1, so plain `next build` — including the
+  // Vercel deployment — gets Next's default output mode.
+  ...(process.env.DESKTOP_BUILD === '1' ? { output: 'standalone' } : {}),
   reactStrictMode: false, // Cesium's Viewer does not tolerate double-mount in dev
   eslint: { ignoreDuringBuilds: true },
   webpack: (config) => {

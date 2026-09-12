@@ -1,0 +1,59 @@
+{
+  "name": "aero-view-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AERO-VIEW — Windows desktop shell (Electron) for the AERO-VIEW web app",
+  "main": "electron/main.js",
+  "scripts": {
+    "pack": "node scripts/build-desktop.js && npx electron-builder --win nsis portable",
+    "dir": "node scripts/build-desktop.js && npx electron-builder --win --dir",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.ramcharankhv.aeroview",
+    "productName": "AERO-VIEW",
+    "afterPack": "scripts/afterPack.js",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "package.json",
+      "!node_modules/**",
+      "!app-bundle/**",
+      "!dist/**",
+      "!public/**",
+      "!data/**"
+    ],
+    "extraResources": [
+      {
+        "from": "app-bundle",
+        "to": "app-bundle",
+        "filter": [
+          "**/*",
+          "!node_modules/.cache/**",
+          "node_modules/**"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "AERO-VIEW-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "AERO-VIEW-Portable-${version}.${ext}"
+    }
+  }
+}

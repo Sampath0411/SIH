@@ -2,6 +2,7 @@
   "name": "ulpin-3d",
   "version": "1.0.0",
   "private": true,
+  "description": "AERO-VIEW — 3D ULPIN Vertical Property Mapper (web)",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
