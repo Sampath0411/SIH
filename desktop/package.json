@@ -1,12 +1,14 @@
 {
   "name": "aero-view-desktop",
+  "productName": "AERO-VIEW",
   "version": "1.0.0",
   "private": true,
   "description": "AERO-VIEW — Windows desktop shell (Electron) for the AERO-VIEW web app",
+  "author": "Ramcharan KH V",
   "main": "electron/main.js",
   "scripts": {
-    "pack": "node scripts/build-desktop.js && npx electron-builder --win nsis portable",
-    "dir": "node scripts/build-desktop.js && npx electron-builder --win --dir",
+    "pack": "node scripts/build-desktop.js",
+    "dir": "node scripts/build-desktop.js --dir",
     "icons": "node scripts/make-icons.mjs"
   },
   "devDependencies": {

@@ -100,7 +100,9 @@ for (const f of ['icon.ico', 'icon-256.png']) {
 }
 
 // ------------------------------------------------------------------- package
-step('running electron-builder (from desktop/)');
-run('npx electron-builder --win nsis portable', { cwd: DESKTOP });
+// `npm run dir` passes --dir through here: unpacked build only, no installers.
+const targets = process.argv.includes('--dir') ? '--dir' : 'nsis portable';
+step(`running electron-builder (from desktop/, targets: ${targets})`);
+run(`npx electron-builder --win ${targets}`, { cwd: DESKTOP });
 
-step('done — see desktop/dist/: AERO-VIEW Setup.exe (installer) and AERO-VIEW portable.exe');
+step(`done — see desktop/dist/${process.argv.includes('--dir') ? 'win-unpacked/' : ': AERO-VIEW Setup.exe (installer) and AERO-VIEW portable.exe'}`);

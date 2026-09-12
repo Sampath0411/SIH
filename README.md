@@ -46,6 +46,56 @@ micromamba create -y -p ./.gdal-env -c conda-forge python=3.12 gdal rasterio pyp
 npm run seed:geo           # = .gdal-env/python scripts/seed.py, same arguments as seed
 ```
 
+## Repository layout
+
+```
+AERO-VIEW/
+├── app/                  Next.js App Router (pages + API routes)   ← deploys to Vercel
+├── components/           React components (viewer, panels, gallery)
+├── lib/                  Domain logic: ULPIN, LADM, geo, auth, stores
+├── data/                 Committed API snapshots (offline fallback)
+├── db/                   PostGIS schema, functions, migrations
+├── docs/                 Decisions, perf notes, screenshots
+├── scripts/              Web tooling: seed pipeline, checks, screenshots
+├── public/               Static assets (Cesium copied here on install)
+└── desktop/              The Windows desktop app — separate from the website
+    ├── electron/         Electron main + preload (the shell)
+    ├── scripts/          build-desktop.js, make-icons.mjs, afterPack.js
+    ├── build/icon.ico    App icon embedded into the exes
+    └── dist/             Installers (gitignored, created by npm run pack)
+```
+
+The root is a **plain Next.js website**: no Electron dependencies, no desktop
+scripts. The desktop app is fully self-contained in `desktop/` with its own
+`package.json`; see `desktop/README.md`.
+
+## Deploying the website to Vercel
+
+The repo root **is** the website, so a Vercel project pointed at the repo root
+needs no special configuration:
+
+- **Framework preset:** Next.js (auto-detected)
+- **Build command / install command:** defaults (`next build`, `npm install`)
+- **Root directory:** leave blank (do **not** set it to `desktop/`)
+- `next.config.mjs` only emits the Electron's standalone server bundle when
+  `DESKTOP_BUILD=1` is set — a var the desktop build sets and Vercel never does,
+  so the deployed bundle stays the standard Vercel output.
+
+Environment variables (see `.env.example`): set `POSTGRES_URL` / `SESSION_SECRET`
+in the Vercel project for the database-backed routes; without them the app falls
+back to the committed snapshots in `data/api/`.
+
+## Building the Windows desktop app
+
+```bash
+npm install                      # web deps + Cesium assets (repo root)
+cd desktop && npm install        # Electron toolchain, isolated in desktop/
+cd desktop && npm run pack       # -> desktop/dist/AERO-VIEW-Setup-1.0.0.exe + portable
+```
+
+The installers and the unpacked build land in `desktop/dist/`. Details and the
+runtime architecture are in [`desktop/README.md`](desktop/README.md).
+
 `/` is the project gallery; each project's viewer is at `/p/<slug>`, e.g.
 [`/p/siripuram`](http://localhost:3000/p/siripuram).
 
