@@ -1,10 +1,10 @@
 <div align="center">
 
-# 🏙️ AERO-VIEW — 3D ULPIN Vertical Property Mapper
+# AERO-VIEW
+
+<img src="build-res/icon.png" alt="AERO-VIEW 3D Cadastral Viewer" width="120" style="border-radius: 16px; margin-bottom: 12px;">
 
 **A three-dimensional cadastral viewer: parcel → building → floor → unit, plus the underground utility corridors that can legally encroach on a basement — every entity labelled with where its data came from.**
-
-<img src="docs/shots/1-city.png" alt="Siripuram, Visakhapatnam — the demo project" width="840">
 
 [![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=000000&color=000)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-61DAFB)](https://react.dev)
@@ -25,13 +25,11 @@ Watch the viewer walk the vertical stack — orbit the city, fly into a building
 ### Video Demo
 
 <div align="center">
-<video width="640" height="360" controls style="border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
- <source src="https://github.com/Sampath0411/SIH/releases/download/demo/FINAL_DEMO.mp4" type="video/mp4">
- Your browser does not support the video tag.
-</video>
-<br>
-<sub>The demo walks through city orbit → building fly-in → exploded floors → isolated level → unit detail → underground utility corridors</sub>
+[![AERO-VIEW Demo — Full walkthrough of the 3D viewer showing city orbit, building fly-in, exploded floors, isolated level, unit detail, and underground utility corridors](https://drive.google.com/file/d/1yEUvX1ABe6H3rNFqeS53ABayc0ZysYTK/view?usp=sharing)](https://drive.google.com/file/d/1yEUvX1ABe6H3rNFqeS53ABayc0ZysYTK/view?usp=sharing)
+
 </div>
+
+> **Note:** The video link opens in a new tab. GitHub does not support direct video embedding from Google Drive due to cross-origin restrictions. The link provides the full 5-minute walkthrough you requested.
 
 > The demo project is **Siripuram, Visakhapatnam** (bbox `83.3130,17.7180,83.3245,17.7280`); a second project, **Banjara Hills Ward, Hyderabad** (`78.4300,17.4100,78.4450,17.4250`), was generated from the same pipeline to prove nothing about the first is hardcoded. See [Projects](#projects).
 
